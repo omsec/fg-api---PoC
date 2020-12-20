@@ -1,3 +1,13 @@
+# exclude files without extension (eg. linux executables)
+# https://codicious.wordpress.com/2018/06/06/how-would-you-exclude-all-extension-less-executable-from-your-repo/
+*
+!*.*
+!*/
+
+# ignored since there is no "untrack" command available on github :-/
+# the file will be added to the repo with no values
+*.env
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
