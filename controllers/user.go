@@ -60,7 +60,7 @@ func Register(c *gin.Context) {
 
 	// basically look for missing fields
 	// len(data.LoginName) < 3|len(data.Password < 8|len(data.EMailAddress == 0)
-	if len(data.LoginName) < 3 || len(data.Password) < 8 || len(data.EMailAddress) == 8 {
+	if len(data.LoginName) < 3 || len(data.Password) < 8 || len(data.EMailAddress) == 0 {
 		c.JSON(http.StatusUnprocessableEntity, "invalid data")
 		return
 	}
