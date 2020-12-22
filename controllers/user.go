@@ -1,12 +1,12 @@
 package controllers
 
 import (
-	"fmt"
 	"forza-garage/authentication"
 	"forza-garage/helpers"
 	"forza-garage/models"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -15,23 +15,24 @@ import (
 func UserExists(c *gin.Context) {
 
 	data := struct {
-		UserName string `json:"loginName"`
+		LoginName string `json:"loginName" binding:"required"`
 	}{}
 
 	// short syntax (err "zentral" deklariert)
-	if err := c.ShouldBindJSON(&data); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, "invalid json")
+	if err := c.BindJSON(&data); err != nil {
 		return
 	}
 
-	fmt.Println(data)
-	b := env.userModel.UserExists(data.UserName)
-	if b == true {
-		c.JSON(http.StatusUnprocessableEntity, nil)
+	// ToDo: More validation (trim ' ', len..?)
+	// Basic Validation/Cleansing in helper Proc?
+	data.LoginName = strings.TrimSpace(data.LoginName)
+	if len(data.LoginName) < 3 {
+		c.Status(http.StatusUnprocessableEntity)
 		return
 	}
 
-	c.JSON(http.StatusOK, nil)
+	b := env.userModel.UserExists(data.LoginName)
+	c.JSON(http.StatusOK, b)
 }
 
 // Register a new User
@@ -49,7 +50,22 @@ func Register(c *gin.Context) {
 	}
 
 	// Validated by the model
+	// Die Prüfung der <User> Struktur erfolgt hier nur via ShouldBindJSON
+	// da nicht alle Felder zentral erzwungen werden können (z. B. Password)
+	// somit werden nur die für den Request benötigten Felder geprüft
+	// auf diese Weise kann der Client übermitteln, was er will, je nach Design
+	data.LoginName = strings.TrimSpace(data.LoginName)
+	data.Password = strings.TrimSpace(data.Password)
+	data.EMailAddress = strings.TrimSpace(data.EMailAddress) // ToDo: perhaps check for valid form
 
+	// basically look for missing fields
+	// len(data.LoginName) < 3|len(data.Password < 8|len(data.EMailAddress == 0)
+	if len(data.LoginName) < 3 || len(data.Password) < 8 || len(data.EMailAddress) == 8 {
+		c.JSON(http.StatusUnprocessableEntity, "invalid data")
+		return
+	}
+
+	// this also validates the user name, pwd etc.
 	ID, err := env.userModel.CreateUser(data)
 	if err != nil {
 		// ToDo: maybe check for an existing XBox-Tag :-)
@@ -64,7 +80,7 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, ID) //std-struktur?
+	c.JSON(http.StatusOK, ID) //std-struktur? ID: 0 - wo zentral definieren? package model.response ?
 }
 
 // Login a user
@@ -76,9 +92,17 @@ func Login(c *gin.Context) {
 		dbUser    *models.User
 	)
 
-	// short syntax (err "zentral" deklariert)
+	// use std struct
 	if err = c.ShouldBindJSON(&givenUser); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, "invalid json")
+		return
+	}
+
+	// check for required fields
+	givenUser.LoginName = strings.TrimSpace(givenUser.LoginName)
+	givenUser.Password = strings.TrimSpace(givenUser.Password)
+	if len(givenUser.LoginName) == 0 || len(givenUser.Password) == 0 {
+		c.JSON(http.StatusForbidden, models.ErrInvalidUser.Error())
 		return
 	}
 
@@ -126,14 +150,14 @@ func Logout(c *gin.Context) {
 
 	au, err := authentication.ExtractTokenMetadata(authentication.AT, c.Request)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, "unauthorized")
+		c.JSON(http.StatusUnauthorized, authentication.ErrUnauthorized.Error())
 		return
 	}
 
 	// nur at löschen, rt bleibt bestehen
 	deleted, delErr := authentication.DeleteAuth(au.TokenUUID)
 	if delErr != nil || deleted == 0 {
-		c.JSON(http.StatusUnauthorized, "unauthorized")
+		c.JSON(http.StatusUnauthorized, authentication.ErrUnauthorized.Error())
 		return
 	}
 
@@ -142,21 +166,19 @@ func Logout(c *gin.Context) {
 
 	au, err = authentication.ExtractTokenMetadata(authentication.RT, c.Request)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, "unauthorized")
+		c.JSON(http.StatusUnauthorized, authentication.ErrUnauthorized.Error())
 		return
 	}
 
 	// rt löschen
 	deleted, delErr = authentication.DeleteAuth(au.TokenUUID)
 	if delErr != nil || deleted == 0 {
-		c.JSON(http.StatusUnauthorized, "unauthorized")
+		c.JSON(http.StatusUnauthorized, authentication.ErrUnauthorized.Error())
 		return
 	}
 
 	// Cookie löschen
 	_ = helpers.DelCookie(c, os.Getenv("JWTCK_NAME"))
-
-	c.JSON(http.StatusOK, nil)
 }
 
 // Refresh erzeugt ein neues AT wenn noch ein RT vorhanden ist - ToDo: evtl. ATs beschränken (wiederholte gültige Refreshes)
@@ -201,7 +223,7 @@ func Refresh(c *gin.Context) {
 	// ein neuer Refresh wird dann aber nicht mehr gehen
 	deleted, err := authentication.DeleteAuths(authentication.RT, userID, au.TokenUUID)
 	if err != nil || deleted == 0 { //if anything goes wrong
-		c.JSON(http.StatusUnauthorized, "unauthorized")
+		c.JSON(http.StatusUnauthorized, authentication.ErrUnauthorized.Error())
 		return
 	}
 
@@ -216,5 +238,73 @@ func Refresh(c *gin.Context) {
 	dbUser.Password = ""
 
 	c.JSON(http.StatusOK, &dbUser)
+}
 
+// ChangePassword sets a new password
+func ChangePassword(c *gin.Context) {
+
+	var dbUser *models.User
+
+	// default auth-check
+	userID, err := authentication.Authenticate(c.Request)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, authentication.ErrUnauthorized.Error())
+		return
+	}
+
+	// request data
+	data := struct {
+		LoginName   string `json:"loginName" binding:"required"`
+		CurrentPWD  string `json:"currentPWD" binding:"required"` // extra-security if that's sent/checked again?
+		NewPassword string `json:"newPWD" binding:"required"`
+	}{}
+
+	// let the Gin framework validate the request
+	if err := c.BindJSON(&data); err != nil {
+		return // wirft 400 - bad request
+	}
+
+	// simple cleansing
+	data.LoginName = strings.TrimSpace(data.LoginName)
+	data.CurrentPWD = strings.TrimSpace(data.CurrentPWD)
+	data.NewPassword = strings.TrimSpace(data.NewPassword)
+
+	// look for empty fields (Gin does not trim)
+	if len(data.LoginName) == 0 || len(data.CurrentPWD) == 0 || len(data.NewPassword) < 8 {
+		c.Status(http.StatusUnprocessableEntity)
+		return
+	}
+
+	// re-load user's profile to perform additional security checks
+	dbUser, err = env.userModel.GetUserByID(userID)
+	if err != nil {
+		// user does not exist
+		if err == models.ErrInvalidUser {
+			c.JSON(http.StatusUnauthorized, authentication.ErrUnauthorized.Error()) // report auth error
+			return
+		}
+		// "real" error
+		c.Status(http.StatusInternalServerError) // make client say "please try again later"
+		return
+	}
+
+	// as an extra-security measure, compare given user name with the one referenced in the cookie
+	if data.LoginName != dbUser.LoginName {
+		c.JSON(http.StatusForbidden, authentication.ErrUnauthorized.Error())
+		return
+	}
+
+	// check the current password (again)
+	granted := env.userModel.CheckPassword(data.CurrentPWD, *dbUser)
+	if !granted {
+		c.JSON(http.StatusForbidden, authentication.ErrUnauthorized.Error())
+		return
+	}
+
+	// ToDo: Validate new PWD (or include that in SetPWD)
+	err = env.userModel.SetPassword(dbUser.ID, data.NewPassword)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, models.ErrInvalidPassword.Error())
+		return
+	}
 }

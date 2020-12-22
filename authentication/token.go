@@ -3,6 +3,7 @@ package authentication
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"forza-garage/helpers"
 	"net/http"
@@ -14,10 +15,16 @@ import (
 	"github.com/twinj/uuid"
 )
 
-// constants
+// token types
 const (
 	AT = "access_token"
 	RT = "refresh_token"
+)
+
+// custom error types - evtl in eigenes file
+var (
+	ErrUnauthorized = errors.New("unauthorized") // invalid token/cookie
+	ErrNotLoggedIn  = errors.New("requires authorization")
 )
 
 // TokenDetails enthält die Daten von AT und RT
@@ -376,7 +383,8 @@ func TokenAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		err := TokenValid(AT, c.Request)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, err.Error())
+			//c.JSON(http.StatusUnauthorized, err.Error())
+			c.JSON(http.StatusUnauthorized, ErrNotLoggedIn.Error())
 			c.Abort()
 			return
 		}

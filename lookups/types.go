@@ -1,5 +1,7 @@
 package lookups
 
+// since there are no joins in MongoDB, text descriptions of code values are fetched by the API
+
 // there's no real good solution in GO :-/
 // https://www.reddit.com/r/golang/comments/kh305t/restrict_allowed_values_for_strings/
 

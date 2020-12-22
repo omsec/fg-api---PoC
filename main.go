@@ -41,6 +41,9 @@ func handleRequests() {
 	router.POST("/user/exists", controllers.UserExists)
 	router.POST("/register", controllers.Register)
 
+	// user-mgmt
+	router.POST("/user/changePass", authentication.TokenAuthMiddleware(), controllers.ChangePassword)
+
 	/*
 		URL scheme:
 		router.POST("/aufgabe/:id", authentication.TokenAuthMiddleware(), controllers.GetAufgabe)

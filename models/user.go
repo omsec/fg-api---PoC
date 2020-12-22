@@ -39,6 +39,7 @@ var (
 	ErrUserNameNotAvailable = errors.New("user name is not available")
 	ErrEMailAddressTaken    = errors.New("email-address is already used")
 	ErrInvalidUser          = errors.New("invalid user name or password")
+	ErrInvalidPassword      = errors.New("password does not meet rules")
 )
 
 // UserExists checks if a User Name is available - used in client for in-type error checking
@@ -79,7 +80,7 @@ func (m UserModel) CreateUser(user User) (string, error) {
 
 	user.ID = primitive.NewObjectID()
 	user.Password = pwdHash
-	user.RoleCode = lookups.UserRole(lookups.URadmin)
+	user.RoleCode = lookups.UserRole(lookups.URguest)
 	user.LastSeenTS = time.Now()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -147,6 +148,38 @@ func (m UserModel) GetUserByID(ID string) (*User, error) {
 	return &user, nil
 }
 
+// GetUserName returns the login name from an ID (reduced version, without profile data)
+func (m UserModel) GetUserName(ID string) (string, error) {
+
+	data := struct {
+		//ID        primitive.ObjectID `bson:"_id"`
+		LoginName string `bson:"loginName"`
+	}{}
+
+	id, err := primitive.ObjectIDFromHex(ID)
+	if err != nil {
+		return "", ErrInvalidUser
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel() // nach 10 Sekunden abbrechen
+
+	fields := bson.D{
+		{Key: "_id", Value: 0}, // _id kommt immer, ausser es wird explizit ausgeschlossen (0)
+		{Key: "loginName", Value: 1}}
+
+	err = m.Collection.FindOne(ctx, bson.M{"_id": id}, options.FindOne().SetProjection(fields)).Decode(&data)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return "", ErrInvalidUser
+		}
+		// pass any other error
+		return "", err
+	}
+
+	return data.LoginName, nil
+}
+
 // CheckPassword tests if a login's password matches
 // (kein DB-Zugriff nötig)
 func (m UserModel) CheckPassword(givenPassword string, userInfo User) bool {
@@ -170,6 +203,34 @@ func (m UserModel) SetLastSeen(userID primitive.ObjectID) {
 
 	// just fire & forget
 	_, _ = m.Collection.UpdateOne(ctx, filter, update)
+}
+
+// SetPassword is used to change a User's password
+func (m UserModel) SetPassword(userID primitive.ObjectID, newPassword string) error {
+	// ToDO: call PWD-Validator func
+
+	pwdHash, err := helpers.GenerateHash(newPassword)
+	if err != nil {
+		return err
+	}
+
+	filter := bson.D{{Key: "_id", Value: userID}}
+	update := bson.D{{Key: "$set", Value: bson.D{{Key: "password", Value: pwdHash}}}}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel() // nach 10 Sekunden abbrechen
+
+	result, err := m.Collection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return err
+	}
+
+	// just an additional check to discover data consistency problems
+	if result.MatchedCount != 1 || result.ModifiedCount != 1 {
+		return errors.New("mulitple records found")
+	}
+
+	return nil
 }
 
 // internal implementations that are used by multiple methods of the model and corresponding handlers
