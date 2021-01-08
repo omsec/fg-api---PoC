@@ -194,13 +194,13 @@ func CreateToken(userID string) (*TokenDetails, error) {
 	td := &TokenDetails{}
 
 	// access token
-	// td.AtExpires = time.Now().Add(time.Minute * 15).Unix() // default 15 min
-	td.AtExpires = time.Now().Add(time.Minute * 5).Unix() // test 5 min
+	td.AtExpires = time.Now().Add(time.Minute * 15).Unix() // default 15 min
+	// td.AtExpires = time.Now().Add(time.Minute * 5).Unix() // test 5 min
 	td.AccessUUID = "at_" + uuid.NewV4().String()
 
 	// refresh token
-	// td.RtExpires = time.Now().Add(time.Hour * 24 * 7).Unix() // default 1 week
-	td.RtExpires = time.Now().Add(time.Minute * 10).Unix() // test 10 min
+	td.RtExpires = time.Now().Add(time.Hour * 24 * 7).Unix() // default 1 week
+	// td.RtExpires = time.Now().Add(time.Minute * 10).Unix() // test 10 min
 	td.RefreshUUID = "rt_" + uuid.NewV4().String()
 
 	// create access token

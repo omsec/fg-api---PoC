@@ -44,6 +44,10 @@ func handleRequests() {
 	// user-mgmt
 	router.POST("/user/changePass", authentication.TokenAuthMiddleware(), controllers.ChangePassword)
 
+	// course
+	router.POST("/course/add", authentication.TokenAuthMiddleware(), controllers.AddCourse)
+	router.GET("/courses", controllers.ListCourses)
+
 	/*
 		URL scheme:
 		router.POST("/aufgabe/:id", authentication.TokenAuthMiddleware(), controllers.GetAufgabe)

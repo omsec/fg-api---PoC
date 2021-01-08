@@ -19,13 +19,22 @@ type User struct {
 	ID           primitive.ObjectID `json:"id" bson:"_id"`
 	LoginName    string             `json:"loginName" bson:"loginName"`
 	Password     string             `json:"password" bson:"password"` // hash value
-	RoleCode     string             `json:"roleCode" bson:"roleCD"`
+	RoleCode     int32              `json:"roleCode" bson:"roleCD"`
 	RoleText     string             `json:"roleText" bson:"-"`
-	LanguageCode string             `json:"languageCode" bson:"languageCD"`
+	LanguageCode int32              `json:"languageCode" bson:"languageCD"`
 	LanguageText string             `json:"languageText" bson:"-"`
 	EMailAddress string             `json:"eMail" bson:"eMail"`
 	XBoxTag      string             `json:"XBoxTag" bson:"XBoxTag"`
 	LastSeenTS   time.Time          `json:"lastSeenTS" bson:"lastSeenTS,omitempty"`
+	// Friends (nested, reduced IDs/Names)
+}
+
+// Credentials is used for programmatic control
+type Credentials struct {
+	LoginName    string
+	RoleCode     int32
+	LanguageCode int32
+	// Friends
 }
 
 // UserModel provides the logic to the interface and access to the database
@@ -49,9 +58,10 @@ func (m UserModel) UserExists(userName string) bool {
 	return b
 }
 
-// EMailAddressTaken checks if an eMail-Address is already assigned with any User Name
-func (m UserModel) EMailAddressTaken(emailAddress string) bool {
-	b, _ := emailTaken(m.Collection, emailAddress)
+// EMailAddressExists checks if an eMail-Address is already assigned with any User Name
+// used in client for in-type error checking
+func (m UserModel) EMailAddressExists(emailAddress string) bool {
+	b, _ := eMailExists(m.Collection, emailAddress)
 	return b
 }
 
@@ -62,12 +72,16 @@ func (m UserModel) CreateUser(user User) (string, error) {
 
 	// ToDO: Validate (ext fnc)
 
+	// ToDo: entfernen => PK in DB machen
+	// braucht Hilfs-Proc (package DB) um die MSG zu parsen key: ....
+	// "multiple write errors: [{write errors: [{E11000 duplicate key error collection: forzaGarage.users index: loginName_1 dup key: { loginName: \"roger\" }}]}, {<nil>}]"
 	b, err := userExists(m.Collection, user.LoginName)
 	if b || err != nil {
 		return "", ErrUserNameNotAvailable
 	}
 
-	b, err = emailTaken(m.Collection, user.EMailAddress)
+	// ToDo: entfernen => PK in DB machen
+	b, err = eMailExists(m.Collection, user.EMailAddress)
 	if b || err != nil {
 		return "", ErrEMailAddressTaken
 	}
@@ -80,7 +94,7 @@ func (m UserModel) CreateUser(user User) (string, error) {
 
 	user.ID = primitive.NewObjectID()
 	user.Password = pwdHash
-	user.RoleCode = lookups.UserRole(lookups.URguest)
+	user.RoleCode = lookups.UserRoleGuest
 	user.LastSeenTS = time.Now()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -137,7 +151,7 @@ func (m UserModel) GetUserByID(ID string) (*User, error) {
 		if err == mongo.ErrNoDocuments {
 			return nil, ErrInvalidUser
 		}
-		// pass any other real
+		// pass any other error
 		return nil, err
 	}
 
@@ -233,6 +247,41 @@ func (m UserModel) SetPassword(userID primitive.ObjectID, newPassword string) er
 	return nil
 }
 
+// GetCredentials returns account infos to control permissions and text-out (language)
+func (m UserModel) GetCredentials(UserID string) (*Credentials, error) {
+	var credentials Credentials
+
+	// https://ildar.pro/golang-hints-create-mongodb-object-id-from-string/
+	id, err := primitive.ObjectIDFromHex(UserID)
+	if err != nil {
+		return nil, ErrInvalidUser
+	}
+
+	fields := bson.D{
+		{Key: "_id", Value: 0}, // _id kommt immer, ausser es wird explizit ausgeschlossen (0)
+		{Key: "loginName", Value: 1},
+		{Key: "roleCD", Value: 1}, // {Key: "metaInfo.rating", Value: 1}, -- so könnte die nested struct eingeschränkt werden
+		{Key: "languageCD", Value: 1},
+		// Friends
+	}
+
+	opts := options.FindOne().SetProjection(fields)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel() // nach 10 Sekunden abbrechen
+
+	err = m.Collection.FindOne(ctx, bson.M{"_id": id}, opts).Decode(&credentials)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, ErrInvalidUser
+		}
+		// pass any other error
+		return nil, err
+	}
+
+	return &credentials, nil
+}
+
 // internal implementations that are used by multiple methods of the model and corresponding handlers
 func userExists(collection *mongo.Collection, userName string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -259,7 +308,7 @@ func userExists(collection *mongo.Collection, userName string) (bool, error) {
 	return true, nil
 }
 
-func emailTaken(collection *mongo.Collection, emailAddress string) (bool, error) {
+func eMailExists(collection *mongo.Collection, emailAddress string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel() // nach 10 Sekunden abbrechen
 

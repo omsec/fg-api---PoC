@@ -18,16 +18,16 @@ type LookupType struct {
 
 // LookupValue represents an Item of the Code's Domain
 type LookupValue struct {
-	LookupValue string `json:"lookupValue" bson:"codeValue"`
+	LookupValue int32  `json:"lookupValue" bson:"codeValue"`
 	Disabled    bool   `json:"disabled" bson:"disabled"`
 	Default     bool   `json:"default" bson:"default"`
-	Indicator   string `json:"indicator" bson:"indicator"`
+	Indicator   string `json:"indicator" bson:"indicator"` // ToDo: "none" weglassen mit omitempty
 	TextEN      string `json:"textEN" bson:"codeTextEN"`
 	TextDE      string `json:"textDE" bson:"codeTextDE"`
 }
 
 // GetLookupText returns Text to Code (ToDO: Language)
-func GetLookupText(lookupType string, lookupValue string) string {
+func GetLookupText(lookupType string, lookupValue int32) string {
 	// https://stackoverflow.com/questions/38654383/how-to-search-for-an-element-in-a-golang-slice
 	str := ""
 

@@ -80,7 +80,7 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, ID) //std-struktur? ID: 0 - wo zentral definieren? package model.response ?
+	c.JSON(http.StatusOK, Created{ID})
 }
 
 // Login a user
@@ -214,7 +214,7 @@ func Refresh(c *gin.Context) {
 			return
 		}
 		// "real" error
-		c.JSON(http.StatusInternalServerError, nil) // make client say "please try again later"
+		c.Status(http.StatusInternalServerError) // make client say "please try again later"
 		return
 	}
 

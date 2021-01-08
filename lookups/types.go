@@ -10,10 +10,17 @@ const (
 	LTuserRole = iota
 	LTlang
 	LTgame
+	LTvisibility
+	LTcourseType
+	LTseries
+	LTcarClass
 )
 
 // LookupType returns names of the available code types
 func LookupType(lt int) string {
+
+	// Alternative:
+	// string-const-array -> dann aber bounds checken!
 
 	var str = ""
 
@@ -24,6 +31,14 @@ func LookupType(lt int) string {
 		str = "user language"
 	case lt == LTgame:
 		str = "game"
+	case lt == LTvisibility:
+		str = "visibility"
+	case lt == LTcourseType:
+		str = "course type"
+	case lt == LTseries:
+		str = "series"
+	case lt == LTcarClass:
+		str = "car class"
 	}
 
 	return str

@@ -10,7 +10,8 @@ import (
 
 // Env is used for dependency-injection (package de-coupling)
 type Env struct {
-	userModel models.UserModel
+	userModel   models.UserModel
+	courseModel models.CourseModel
 }
 
 // newEnv operates as the constructor to initialize the collection references (private)
@@ -19,6 +20,9 @@ func newEnv(client *mongo.Client) *Env {
 
 	env.userModel.Client = client
 	env.userModel.Collection = client.Database(os.Getenv("DB_NAME")).Collection("users") // ToDO: Const
+
+	env.courseModel.Client = client
+	env.courseModel.Collection = client.Database(os.Getenv("DB_NAME")).Collection("racing") // ToDO: Const
 
 	return env
 }
