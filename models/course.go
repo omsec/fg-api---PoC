@@ -24,6 +24,8 @@ type Course struct {
 	MetaInfo       Header             `json:"metaInfo" bson:"metaInfo"`
 	VisibilityCode int32              `json:"visibilityCode" bson:"visibilityCD"`
 	VisibilityText string             `json:"visibilityText" bson:"-"`
+	GameCode       int32              `json:"gameCode" bson:"gameCD"`
+	GameText       string             `json:"gameText" bson:"-"`
 	TypeCode       int32              `json:"typeCode" bson:"courseTypeCD"` // identifies object type (for searches, $exists)
 	TypeText       string             `json:"typeText" bson:"-"`
 	ForzaSharing   int32              `json:"forzaSharing" bson:"forzaSharing"`
@@ -40,6 +42,8 @@ type CourseListItem struct {
 	CreatedID    primitive.ObjectID `json:"createdID"`
 	CreatedName  string             `json:"createdName"`
 	Rating       float32            `json:"rating"`
+	GameCode     int32              `json:"gameCode"`
+	GameText     string             `json:"gameText"`
 	Name         string             `json:"name"`
 	ForzaSharing int32              `json:"forzaSharing"`
 	SeriesCode   int32              `json:"seriesCode"`
@@ -143,9 +147,11 @@ func (m CourseModel) CreateCourse(course *Course) (string, error) {
 // SearchCourses lists or searches course (ohne Comments, aber mit Files/Tags)
 func (m CourseModel) SearchCourses(searchTerm string) ([]CourseListItem, error) {
 
-	// ToDo: arr user-Struct as param (reduced) and check credentials
+	// ToDo: add user-Struct as param (reduced) and check credentials
 	// filter except for admins
 	// -> ohne userId nicht prüfen (filter public)
+
+	// ToDO: statt $regex die funktion $text verwenden (performanter für volltext-suche)
 
 	// Verkleinerte/vereinfachte Struktur für Listen
 	// MongoDB muss eine passende Struktur erhalten um die Daten aufzunehmen (z. B. mit nested Arrays)
@@ -157,6 +163,7 @@ func (m CourseModel) SearchCourses(searchTerm string) ([]CourseListItem, error) 
 	fields := bson.D{
 		{Key: "_id", Value: 1},      // _id kommt immer, ausser es wird explizit ausgeschlossen (0)
 		{Key: "metaInfo", Value: 1}, // {Key: "metaInfo.rating", Value: 1}, -- so könnte die nested struct eingeschränkt werden
+		{Key: "gameCD", Value: 1},
 		{Key: "name", Value: 1},
 		{Key: "forzaSharing", Value: 1},
 		{Key: "seriesCD", Value: 1},
@@ -226,6 +233,8 @@ func (m CourseModel) SearchCourses(searchTerm string) ([]CourseListItem, error) 
 		course.CreatedID = v.MetaInfo.CreatedID
 		course.CreatedName = v.MetaInfo.CreatedName
 		course.Rating = v.MetaInfo.Rating
+		course.GameCode = v.GameCode
+		course.GameText = database.GetLookupText(lookups.LookupType(lookups.LTgame), v.GameCode)
 		course.Name = v.Name
 		course.ForzaSharing = v.ForzaSharing
 		course.SeriesCode = v.SeriesCode
