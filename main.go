@@ -43,6 +43,7 @@ func handleRequests() {
 
 	// user-mgmt
 	router.POST("/user/changePass", authentication.TokenAuthMiddleware(), controllers.ChangePassword)
+	router.GET("users/:id", authentication.TokenAuthMiddleware(), controllers.GetUser)
 
 	// course
 	router.POST("/course/add", authentication.TokenAuthMiddleware(), controllers.AddCourse)
@@ -50,8 +51,9 @@ func handleRequests() {
 
 	/*
 		URL scheme:
-		router.POST("/aufgabe/:id", authentication.TokenAuthMiddleware(), controllers.GetAufgabe)
-		router.POST("/aufgaben", authentication.TokenAuthMiddleware(), controllers.ListAufgaben)
+		router.GET("/aufgaben", authentication.TokenAuthMiddleware(), controllers.ListAufgaben)
+		router.GET("/aufgabe/:id", authentication.TokenAuthMiddleware(), controllers.GetAufgabe)
+		router.DELETE("/aufgabe/:id", authentication.TokenAuthMiddleware(), controllers.DeleteAufgabe)
 		router.POST("/aufgaben/add", authentication.TokenAuthMiddleware(), controllers.CreateAufgabe)
 		router.POST("/aufgaben/edit/:id", authentication.TokenAuthMiddleware(), controllers.UpdateAufgabe)
 	*/
