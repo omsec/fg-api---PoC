@@ -5,7 +5,6 @@ import (
 	"forza-garage/authentication"
 	"forza-garage/models"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -71,16 +70,11 @@ func ListCourses(c *gin.Context) {
 
 	fmt.Println(userID)
 
-	data := struct {
-		SearchTerm string `json:"searchTerm"`
-	}{}
+	searchTerm := c.Query("search")
+	// fmt.Println(searchTerm)
 
-	if err := c.ShouldBindJSON(&data); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, ErrInvalidRequest.Error())
-		return
-	}
-
-	data.SearchTerm = strings.TrimSpace(data.SearchTerm)
+	// nötig?
+	// searchTerm = strings.TrimSpace(data.SearchTerm)
 	// fmt.Println(data.SearchTerm)
 
 	// any error would be considered "anonymous user"
@@ -88,7 +82,7 @@ func ListCourses(c *gin.Context) {
 
 	fmt.Println(credentials)
 
-	courses, err := env.courseModel.SearchCourses(data.SearchTerm)
+	courses, err := env.courseModel.SearchCourses(searchTerm)
 	if err != nil {
 		// nothing found
 		if err == models.ErrNoData {

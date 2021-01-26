@@ -48,8 +48,7 @@ func handleRequests() {
 	// course
 	// GET hat keinen BODY (Go/Gin & Postman unterstützen das zwar, Angular nicht) - deshalb POST (für searchTerm-Struct)
 	// https://xspdf.com/resolution/58530870.html
-	// ToDo: GET mit OPTIONS/Header gemäss Buch
-	router.POST("/courses", controllers.ListCourses)
+	router.GET("/courses", controllers.ListCourses)
 	router.GET("/courses/:id", controllers.GetCourse)
 	router.POST("/course/add", authentication.TokenAuthMiddleware(), controllers.AddCourse)
 
