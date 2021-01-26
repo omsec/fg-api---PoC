@@ -14,8 +14,9 @@ import (
 func AddCourse(c *gin.Context) {
 
 	var (
-		err  error
-		data models.Course
+		err      error
+		data     models.Course
+		apiError ErrorResponse
 	)
 
 	userID, err := authentication.Authenticate(c.Request)
@@ -47,7 +48,14 @@ func AddCourse(c *gin.Context) {
 
 	id, err := env.courseModel.CreateCourse(course)
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		switch err {
+		case models.ErrForzaSharingCodeTaken:
+			apiError.Code = 1000
+			apiError.Message = err.Error()
+			c.JSON(http.StatusUnprocessableEntity, apiError)
+		default:
+			c.JSON(http.StatusInternalServerError, err.Error())
+		}
 		return
 	}
 
@@ -73,6 +81,7 @@ func ListCourses(c *gin.Context) {
 	}
 
 	data.SearchTerm = strings.TrimSpace(data.SearchTerm)
+	// fmt.Println(data.SearchTerm)
 
 	// any error would be considered "anonymous user"
 	credentials, _ := env.userModel.GetCredentials(userID)
@@ -92,5 +101,30 @@ func ListCourses(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, courses)
+}
 
+// GetCourse returns the specified track
+func GetCourse(c *gin.Context) {
+
+	var (
+		err  error
+		data *models.Course
+	)
+
+	// ToDo: pass userID to model
+	// no error checking because it's optional (public courses only)
+	// userID, _ = authentication.Authenticate(c.Request)
+
+	// muss nicht auf null geprüft werden, denn ohne Parameter ist es eine andere Route (wie in Angular)
+	// typ wird automatisch gesetzt (kann aber STR sein)
+	var id = c.Param("id")
+
+	data, err = env.courseModel.GetCourse(id)
+	if err != nil {
+		// ToDO: Fehlerbehandlung (visiblity msg etc.)
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	c.JSON(http.StatusOK, data)
 }

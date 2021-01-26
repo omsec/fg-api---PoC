@@ -15,7 +15,7 @@ import (
 var cookieParams = securecookie.Params{
 	Path:     "/",              // cookie received only when URL starts with this path
 	Domain:   "",               // cookie received only when URL domain matches this one
-	MaxAge:   3600,             // cookie becomes invalid 3600 seconds after it is set
+	MaxAge:   3600 * 24 * 7,    // cookie becomes invalid 1 week after it is set (default 3600 seconds)
 	HTTPOnly: true,             // disallow access by remote javascript code
 	Secure:   false,            // cookie received only with HTTPS, never with HTTP
 	SameSite: securecookie.Lax, // cookie received with same or sub-domain names

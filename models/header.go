@@ -8,7 +8,7 @@ import (
 
 // Header is used as an embedded type for an object's meta-info
 type Header struct {
-	// CreatedAt is read from Mongo's ObjectID
+	CreatedTS    time.Time          `json:"createdTS" bson:"-"` // CreatedTS is read from Mongo's ObjectID
 	CreatedID    primitive.ObjectID `json:"createdID" bson:"createdID"`
 	CreatedName  string             `json:"createdName" bson:"createdName"`
 	ModifiedTS   time.Time          `json:"modifiedTS" bson:"modifiedTS,omitempty"` // edited if present

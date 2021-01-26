@@ -39,6 +39,7 @@ type Course struct {
 // CourseListItem is the reduced/simplified model used for listings
 type CourseListItem struct {
 	ID           primitive.ObjectID `json:"id"`
+	CreatedTS    time.Time          `json:"createdTS"`
 	CreatedID    primitive.ObjectID `json:"createdID"`
 	CreatedName  string             `json:"createdName"`
 	Rating       float32            `json:"rating"`
@@ -151,8 +152,6 @@ func (m CourseModel) SearchCourses(searchTerm string) ([]CourseListItem, error) 
 	// filter except for admins
 	// -> ohne userId nicht prüfen (filter public)
 
-	// ToDO: statt $regex die funktion $text verwenden (performanter für volltext-suche)
-
 	// Verkleinerte/vereinfachte Struktur für Listen
 	// MongoDB muss eine passende Struktur erhalten um die Daten aufzunehmen (z. B. mit nested Arrays)
 	// das API kann die Daten dann in die Listenstruktur kopieren
@@ -230,6 +229,7 @@ func (m CourseModel) SearchCourses(searchTerm string) ([]CourseListItem, error) 
 
 	for _, v := range courses {
 		course.ID = v.ID
+		course.CreatedTS = primitive.ObjectID.Timestamp(v.ID)
 		course.CreatedID = v.MetaInfo.CreatedID
 		course.CreatedName = v.MetaInfo.CreatedName
 		course.Rating = v.MetaInfo.Rating
@@ -246,4 +246,35 @@ func (m CourseModel) SearchCourses(searchTerm string) ([]CourseListItem, error) 
 	}
 
 	return courseList, nil
+}
+
+// GetCourse returns one
+func (m CourseModel) GetCourse(courseID string) (*Course, error) {
+
+	// ToDO: check visiblity/Permissions
+
+	id, err := primitive.ObjectIDFromHex(courseID)
+	if err != nil {
+		return nil, ErrNoData
+	}
+
+	data := Course{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel() // nach 10 Sekunden abbrechen
+
+	// später vielleicht project() wenn's zu viele fleder werden (excl. nested oder sowas)
+	err = m.Collection.FindOne(ctx, bson.M{"_id": id}).Decode(&data)
+	if err != nil {
+		return nil, ErrNoData
+	}
+
+	// add look-ups
+	data.VisibilityText = database.GetLookupText(lookups.LookupType(lookups.LTvisibility), data.VisibilityCode)
+	data.GameText = database.GetLookupText(lookups.LookupType(lookups.LTgame), data.GameCode)
+	data.TypeText = database.GetLookupText(lookups.LookupType(lookups.LTcourseType), data.TypeCode)
+	data.SeriesText = database.GetLookupText(lookups.LookupType(lookups.LTseries), data.SeriesCode)
+	data.CarClassText = database.GetLookupText(lookups.LookupType(lookups.LTcarClass), data.CarClassCode)
+
+	return &data, nil
 }
