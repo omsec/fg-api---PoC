@@ -42,15 +42,18 @@ func handleRequests() {
 	router.POST("/register", controllers.Register)
 
 	// user-mgmt
-	router.POST("/user/changePass", authentication.TokenAuthMiddleware(), controllers.ChangePassword)
 	router.GET("users/:id", authentication.TokenAuthMiddleware(), controllers.GetUser)
+	router.POST("/user/changePass", authentication.TokenAuthMiddleware(), controllers.ChangePassword)
+	router.POST("/user/addFriend", authentication.TokenAuthMiddleware(), controllers.AddFriend)
+	router.POST("/user/removeFriend", authentication.TokenAuthMiddleware(), controllers.RemoveFriend)
 
 	// course
-	// GET hat keinen BODY (Go/Gin & Postman unterstützen das zwar, Angular nicht) - deshalb POST (für searchTerm-Struct)
+	// GET hat keinen BODY (Go/Gin & Postman unterstützen das zwar, Angular nicht) - deshalb Parameter
 	// https://xspdf.com/resolution/58530870.html
 	router.GET("/courses", controllers.ListCourses)
 	router.GET("/courses/:id", controllers.GetCourse)
 	router.POST("/course/add", authentication.TokenAuthMiddleware(), controllers.AddCourse)
+	router.POST("/course/exists", authentication.TokenAuthMiddleware(), controllers.ExistsForzaShare) // protected to prevent sniffs ;-)
 
 	/*
 		URL scheme:

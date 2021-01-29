@@ -2,7 +2,7 @@ package models
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"forza-garage/database"
 	"forza-garage/helpers"
 	"forza-garage/lookups"
@@ -26,7 +26,7 @@ type User struct {
 	EMailAddress string             `json:"eMail" bson:"eMail"`
 	XBoxTag      string             `json:"XBoxTag" bson:"XBoxTag"`
 	LastSeenTS   time.Time          `json:"lastSeenTS" bson:"lastSeenTS,omitempty"`
-	// Friends (nested, reduced IDs/Names)
+	Friends      []UserRef          `json:"friends" bson:"friends"`
 }
 
 // Credentials is used for programmatic control
@@ -34,7 +34,13 @@ type Credentials struct {
 	LoginName    string
 	RoleCode     int32
 	LanguageCode int32
-	// Friends
+	Friends      []UserRef
+}
+
+// UserRef is a simple reference to user infromation, eg. uses in the friendlist
+type UserRef struct {
+	ID        primitive.ObjectID `json:"id" bson:"_id"`
+	LoginName string             `json:"loginName" bson:"loginName"`
 }
 
 // UserModel provides the logic to the interface and access to the database
@@ -42,14 +48,6 @@ type UserModel struct {
 	Client     *mongo.Client
 	Collection *mongo.Collection
 }
-
-// custom error types - evtl in eigenes file
-var (
-	ErrUserNameNotAvailable = errors.New("user name is not available")
-	ErrEMailAddressTaken    = errors.New("email-address is already used")
-	ErrInvalidUser          = errors.New("invalid user name or password")
-	ErrInvalidPassword      = errors.New("password does not meet rules")
-)
 
 // UserExists checks if a User Name is available - used in client for in-type error checking
 // (wrapper of internal helper function)
@@ -86,10 +84,9 @@ func (m UserModel) CreateUser(user User) (string, error) {
 		return "", ErrEMailAddressTaken
 	}
 
-	// ToDO: move to validate proc
 	pwdHash, err := helpers.GenerateHash(user.Password)
 	if err != nil {
-		return "", err
+		return "", helpers.WrapError(err, helpers.FuncName())
 	}
 
 	user.ID = primitive.NewObjectID()
@@ -102,7 +99,7 @@ func (m UserModel) CreateUser(user User) (string, error) {
 
 	res, err := m.Collection.InsertOne(ctx, user)
 	if err != nil {
-		return "", err // primitive.NilObjectID.Hex() ? probly useless
+		return "", helpers.WrapError(err, helpers.FuncName()) // primitive.NilObjectID.Hex() ? probly useless
 	}
 
 	return res.InsertedID.(primitive.ObjectID).Hex(), nil
@@ -122,8 +119,8 @@ func (m UserModel) GetUserByName(userName string) (*User, error) {
 		if err == mongo.ErrNoDocuments {
 			return nil, ErrInvalidUser
 		}
-		// pass any other real
-		return nil, err
+		// pass any other error
+		return nil, helpers.WrapError(err, helpers.FuncName())
 	}
 
 	// add look-up texts
@@ -152,7 +149,7 @@ func (m UserModel) GetUserByID(ID string) (*User, error) {
 			return nil, ErrInvalidUser
 		}
 		// pass any other error
-		return nil, err
+		return nil, helpers.WrapError(err, helpers.FuncName())
 	}
 
 	// add look-up text
@@ -188,7 +185,8 @@ func (m UserModel) GetUserName(ID string) (string, error) {
 			return "", ErrInvalidUser
 		}
 		// pass any other error
-		return "", err
+		return "", helpers.WrapError(err, helpers.FuncName())
+
 	}
 
 	return data.LoginName, nil
@@ -206,6 +204,7 @@ func (m UserModel) CheckPassword(givenPassword string, userInfo User) bool {
 
 // SetLastSeen saves timestamp of last log-in
 // ToDo: add IP-Address & record history (collection analytics)
+// ToDO: auch in refresh rufen
 func (m UserModel) SetLastSeen(userID primitive.ObjectID) {
 	// no error is returned since this function is not essential
 
@@ -225,7 +224,7 @@ func (m UserModel) SetPassword(userID primitive.ObjectID, newPassword string) er
 
 	pwdHash, err := helpers.GenerateHash(newPassword)
 	if err != nil {
-		return err
+		return helpers.WrapError(err, helpers.FuncName())
 	}
 
 	filter := bson.D{{Key: "_id", Value: userID}}
@@ -236,12 +235,13 @@ func (m UserModel) SetPassword(userID primitive.ObjectID, newPassword string) er
 
 	result, err := m.Collection.UpdateOne(ctx, filter, update)
 	if err != nil {
-		return err
+		return helpers.WrapError(err, helpers.FuncName())
 	}
 
 	// just an additional check to discover data consistency problems
 	if result.MatchedCount != 1 || result.ModifiedCount != 1 {
-		return errors.New("mulitple records found")
+		// treat this as system error (which causes 500)
+		return helpers.WrapError(ErrMultipleRecords, helpers.FuncName())
 	}
 
 	return nil
@@ -262,7 +262,7 @@ func (m UserModel) GetCredentials(UserID string) (*Credentials, error) {
 		{Key: "loginName", Value: 1},
 		{Key: "roleCD", Value: 1}, // {Key: "metaInfo.rating", Value: 1}, -- so könnte die nested struct eingeschränkt werden
 		{Key: "languageCD", Value: 1},
-		// Friends
+		{Key: "friends", Value: 1},
 	}
 
 	opts := options.FindOne().SetProjection(fields)
@@ -276,13 +276,105 @@ func (m UserModel) GetCredentials(UserID string) (*Credentials, error) {
 			return nil, ErrInvalidUser
 		}
 		// pass any other error
-		return nil, err
+		return nil, helpers.WrapError(err, helpers.FuncName())
 	}
 
 	return &credentials, nil
 }
 
+// AddFriend adds another user to the friendlist
+func (m UserModel) AddFriend(targetUserID string, friendUserID string) error {
+
+	// ToDO: Prüfung entfernen bei mehreren; im Loop einfach ignorieren ohne FEhler
+	// überhaupt nötig? hängt vom gui ab
+	if targetUserID == friendUserID {
+		return ErrInvalidFriend
+	}
+
+	// objectID required for update
+	targetID, err := primitive.ObjectIDFromHex(targetUserID)
+	if err != nil {
+		return ErrInvalidUser
+	}
+
+	friendID, err := primitive.ObjectIDFromHex(friendUserID)
+	if err != nil {
+		return ErrInvalidUser
+	}
+
+	friendInfo, err := m.GetCredentials(friendUserID)
+	if err != nil {
+		return err
+	}
+
+	friend := UserRef{
+		ID:        friendID,
+		LoginName: friendInfo.LoginName}
+
+	filter := bson.D{{Key: "_id", Value: targetID}}
+	// $addToSet silently checks for duplicates - $push does not
+	update := bson.D{{Key: "$addToSet", Value: bson.D{{Key: "friends", Value: friend}}}}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel() // nach 10 Sekunden abbrechen
+
+	// not interessted in result (eg. no of changes)
+	_, err = m.Collection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return helpers.WrapError(err, helpers.FuncName())
+	}
+
+	return nil
+}
+
+// RemoveFriend adds another user to the friendlist
+func (m UserModel) RemoveFriend(targetUserID string, friendUserID string) error {
+
+	// ToDO: Prüfung entfernen bei mehreren; im Loop einfach ignorieren ohne FEhler
+	// überhaupt nötig? hängt vom gui ab
+	if targetUserID == friendUserID {
+		return ErrInvalidFriend
+	}
+
+	// objectID required for update
+	targetID, err := primitive.ObjectIDFromHex(targetUserID)
+	if err != nil {
+		return ErrInvalidUser
+	}
+
+	friendID, err := primitive.ObjectIDFromHex(friendUserID)
+	if err != nil {
+		return ErrInvalidUser
+	}
+
+	filter := bson.D{{Key: "_id", Value: targetID}}
+	// Formatierung ausprobieren was lesbarer scheint - mit Zeilenumbruch braucht's Kommas...
+	// update := bson.D{{Key: "$pull", Value: bson.D{{Key: "friends", Value: bson.D{{Key: "_id", Value: friendID}}}}}}
+	update := bson.D{
+		{Key: "$pull", Value: bson.D{
+			{Key: "friends", Value: bson.D{
+				{Key: "_id", Value: friendID}},
+			}},
+		}}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel() // nach 10 Sekunden abbrechen
+
+	// not interessted in result (eg. no of changes)
+	res, err := m.Collection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		// fmt.Println(err)
+		return helpers.WrapError(err, helpers.FuncName())
+	}
+
+	fmt.Println(res)
+
+	return nil
+}
+
 // internal implementations that are used by multiple methods of the model and corresponding handlers
+// ToDo: müsste nicht ausgelagert sein, kann private member sein (klein schreiben)
+
 func userExists(collection *mongo.Collection, userName string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel() // nach 10 Sekunden abbrechen
@@ -302,7 +394,7 @@ func userExists(collection *mongo.Collection, userName string) (bool, error) {
 			return false, nil
 		}
 		// treat errors as a "yes" - caller should not evaluate the result in case of an error
-		return true, err
+		return true, helpers.WrapError(err, helpers.FuncName())
 	}
 	// no error means a document was found, hence the user does exist
 	return true, nil
@@ -328,13 +420,14 @@ func eMailExists(collection *mongo.Collection, emailAddress string) (bool, error
 			return false, nil
 		}
 		// treat errors as a "yes" - caller should not evaluate the result in case of an error
-		return true, err
+		return true, helpers.WrapError(err, helpers.FuncName())
 	}
 	// no error means a document was found, hence the user does exist
 	return true, nil
 }
 
 // internal helpers
+
 // actually that's not immutable, but ok here
 func addLookups(user *User) *User {
 	user.RoleText = database.GetLookupText(lookups.LookupType(lookups.LTuserRole), user.RoleCode)

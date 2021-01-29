@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"fmt"
 	"forza-garage/authentication"
 	"forza-garage/models"
 	"net/http"
@@ -20,20 +19,32 @@ func AddCourse(c *gin.Context) {
 
 	userID, err := authentication.Authenticate(c.Request)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, authentication.ErrUnauthorized.Error())
+		c.Status(http.StatusUnauthorized)
 		return
 	}
 
 	// use "shouldBind" not all fields are required in this context
 	if err = c.ShouldBindJSON(&data); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, ErrInvalidRequest.Error())
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
 		return
 	}
 
 	// validate request
 	course, err := env.courseModel.Validate(data)
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, err.Error())
+		switch err {
+		case models.ErrCourseNameMissing:
+			apiError.Code = CourseNameMissing
+			apiError.Message = apiError.String(apiError.Code)
+			c.JSON(http.StatusUnprocessableEntity, apiError)
+		default:
+			apiError.Code = SystemError
+			apiError.Message = apiError.String(apiError.Code)
+			// fmt.Println(err)
+			c.JSON(http.StatusInternalServerError, apiError)
+		}
 		return
 	}
 
@@ -41,7 +52,17 @@ func AddCourse(c *gin.Context) {
 	course.MetaInfo.CreatedID = models.ObjectID(userID)
 	course.MetaInfo.CreatedName, err = env.userModel.GetUserName(userID)
 	if err != nil {
-		c.Status(http.StatusInternalServerError)
+		switch err {
+		case models.ErrInvalidUser:
+			apiError.Code = InvalidRequest
+			apiError.Message = apiError.String(apiError.Code)
+			c.JSON(http.StatusUnprocessableEntity, apiError)
+		default:
+			apiError.Code = SystemError
+			apiError.Message = apiError.String(apiError.Code)
+			// fmt.Println(err)
+			c.JSON(http.StatusInternalServerError, apiError)
+		}
 		return
 	}
 
@@ -49,8 +70,8 @@ func AddCourse(c *gin.Context) {
 	if err != nil {
 		switch err {
 		case models.ErrForzaSharingCodeTaken:
-			apiError.Code = 1000
-			apiError.Message = err.Error()
+			apiError.Code = ForzaShareTaken
+			apiError.Message = apiError.String(apiError.Code)
 			c.JSON(http.StatusUnprocessableEntity, apiError)
 		default:
 			c.JSON(http.StatusInternalServerError, err.Error())
@@ -62,35 +83,40 @@ func AddCourse(c *gin.Context) {
 }
 
 // ListCourses returns a list of racing tracks
+// format => http://localhost:3000/courses?game=fh4&search=roger
 func ListCourses(c *gin.Context) {
+
+	var apiError ErrorResponse
 
 	// Error maybe ignored here
 	// Service is public, however members receive more results (and do need to wait for another request)
 	userID, _ := authentication.Authenticate(c.Request)
 
-	fmt.Println(userID)
+	var search *models.CourseSearch
+	search = new(models.CourseSearch)
 
-	searchTerm := c.Query("search")
+	search.UserID = userID
+	search.GameText = c.Query("game")
+	search.SearchTerm = c.Query("search")
+
 	// fmt.Println(searchTerm)
 
 	// nötig?
 	// searchTerm = strings.TrimSpace(data.SearchTerm)
 	// fmt.Println(data.SearchTerm)
 
-	// any error would be considered "anonymous user"
-	credentials, _ := env.userModel.GetCredentials(userID)
-
-	fmt.Println(credentials)
-
-	courses, err := env.courseModel.SearchCourses(searchTerm)
+	courses, err := env.courseModel.SearchCourses(search)
 	if err != nil {
-		// nothing found
+		// nothing found (not an error to the client)
 		if err == models.ErrNoData {
 			c.Status(http.StatusNoContent)
 			return
 		}
 		// technical errors
-		c.Status(http.StatusInternalServerError)
+		apiError.Code = SystemError
+		apiError.Message = apiError.String(apiError.Code)
+		// fmt.Println(err)
+		c.JSON(http.StatusInternalServerError, apiError)
 		return
 	}
 
@@ -99,6 +125,8 @@ func ListCourses(c *gin.Context) {
 
 // GetCourse returns the specified track
 func GetCourse(c *gin.Context) {
+
+	var apiError ErrorResponse
 
 	var (
 		err  error
@@ -115,10 +143,65 @@ func GetCourse(c *gin.Context) {
 
 	data, err = env.courseModel.GetCourse(id)
 	if err != nil {
-		// ToDO: Fehlerbehandlung (visiblity msg etc.)
-		c.Status(http.StatusNoContent)
+		// ToDO: Check Vsibility
+		switch err {
+		case models.ErrNoData:
+			c.Status(http.StatusNoContent)
+		default:
+			apiError.Code = SystemError
+			apiError.Message = apiError.String(apiError.Code)
+			// fmt.Println(err)
+			c.JSON(http.StatusInternalServerError, apiError)
+		}
 		return
 	}
 
 	c.JSON(http.StatusOK, data)
+}
+
+// Additional & Helper Services
+
+// ExistsForzaShare checks if a given Forza Sharing Code is already in use
+// (used for typing-checks in clients)
+func ExistsForzaShare(c *gin.Context) {
+
+	var apiError ErrorResponse
+
+	/*
+		// falls später die userID/Rolle geprüft werden soll
+		userID, err := authentication.Authenticate(c.Request)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, authentication.ErrUnauthorized.Error())
+			return
+		}
+	*/
+
+	// anonymous struct used to receive input (POST BODY)
+	data := struct {
+		ForzaSharing int32 `json:"ForzaSharing" binding:"required"`
+	}{}
+
+	// use 'shouldBind' so we can send customized messages
+	if err := c.ShouldBindJSON(&data); err != nil {
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	}
+
+	exists, err := env.courseModel.ForzaSharingExists(data.ForzaSharing)
+	if err != nil {
+		apiError.Code = SystemError
+		apiError.Message = apiError.String(apiError.Code)
+		// fmt.Println(err)
+		c.JSON(http.StatusInternalServerError, apiError)
+		return
+	}
+
+	// wrap response into an object
+	res := struct {
+		Exists bool `json:"exists"`
+	}{exists}
+
+	c.JSON(http.StatusOK, res)
 }

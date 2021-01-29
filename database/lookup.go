@@ -2,7 +2,9 @@ package database
 
 import (
 	"context"
+	"errors"
 	"os"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -43,6 +45,26 @@ func GetLookupText(lookupType string, lookupValue int32) string {
 	}
 
 	return str
+}
+
+// GetLookupValue attempts to find the code value of an english string
+func GetLookupValue(lookupType string, lookupText string) (int32, error) {
+
+	var val int32 = -1
+	str := strings.ToLower(lookupText)
+
+	for t := range lookups {
+		if lookups[t].Name == lookupType {
+			for v := range lookups[t].Values {
+				if strings.ToLower(lookups[t].Values[v].TextEN) == str {
+					val = lookups[t].Values[v].LookupValue
+					return val, nil
+				}
+			}
+		}
+	}
+
+	return val, errors.New("not found")
 }
 
 // internal loader of the code-map, used only by "OpenConnection"

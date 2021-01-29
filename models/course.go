@@ -2,8 +2,9 @@ package models
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"forza-garage/database"
+	"forza-garage/helpers"
 	"forza-garage/lookups"
 	"strconv"
 	"strings"
@@ -53,19 +54,19 @@ type CourseListItem struct {
 	CarClassText string             `json:"carClassText"`
 }
 
+// CourseSearch is passed as the search params
+// ToDO: Binding: Required?
+type CourseSearch struct {
+	UserID     string // used to look-up Role & Friendlist
+	GameText   string // client should pass readable text in URL rather than codes
+	SearchTerm string
+}
+
 // CourseModel provides the logic to the interface and access to the database
 type CourseModel struct {
 	Client     *mongo.Client
 	Collection *mongo.Collection
 }
-
-// custom error types
-var (
-	ErrForzaSharingCodeMissing = errors.New("sharing code is required")
-	ErrCourseNameMissing       = errors.New("course name is required")
-	ErrSeriesMissing           = errors.New("series is required")
-	ErrForzaSharingCodeTaken   = errors.New("forza sharing code already used")
-)
 
 // Validate checks given values and sets defaults where applicable (immutable)
 func (m CourseModel) Validate(course Course) (*Course, error) {
@@ -76,6 +77,7 @@ func (m CourseModel) Validate(course Course) (*Course, error) {
 	// Clean Strings
 	// Validate Code Values (?) -> dann geht es nicxht mit Const/Enum, sondern const-array
 	// ..according to model
+	// Forza Share Code (Range)
 
 	cleaned.Name = strings.TrimSpace(cleaned.Name)
 	if course.Name == "" {
@@ -100,15 +102,13 @@ func (m CourseModel) ForzaSharingExists(sharingCode int32) (bool, error) {
 		ID primitive.ObjectID `bson:"_id"`
 	}{}
 
-	// some (old) sources say FindOne is slow and we should use find instead... (?)
-	// ToDO: Add index to field in MongoDB
 	err := m.Collection.FindOne(ctx, bson.M{"forzaSharing": sharingCode}, options.FindOne().SetProjection(fields)).Decode(&data)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return false, nil
 		}
 		// treat errors as a "yes" - caller should not evaluate the result in case of an error
-		return true, err
+		return true, helpers.WrapError(err, helpers.FuncName())
 	}
 	// no error means a document was found, hence the object exists
 	return true, nil
@@ -146,7 +146,7 @@ func (m CourseModel) CreateCourse(course *Course) (string, error) {
 }
 
 // SearchCourses lists or searches course (ohne Comments, aber mit Files/Tags)
-func (m CourseModel) SearchCourses(searchTerm string) ([]CourseListItem, error) {
+func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem, error) {
 
 	// ToDo: add user-Struct as param (reduced) and check credentials
 	// filter except for admins
@@ -177,18 +177,26 @@ func (m CourseModel) SearchCourses(searchTerm string) ([]CourseListItem, error) 
 	opts := options.Find().SetProjection(fields).SetLimit(20).SetSort(sort)
 
 	// only list documents of "course" type
-	// ToDO: Visibility Code - überlegen, wie das mit offenen benutzer (ohne login) sein soll - glaube macht so keinen Sinn mehr => all/friends
 
 	// https://docs.mongodb.com/manual/tutorial/query-documents/
 	// https://docs.mongodb.com/manual/reference/operator/query/#query-selectors
 	// https://stackoverflow.com/questions/3305561/how-to-query-mongodb-with-like
 
+	gameCode, err := database.GetLookupValue(lookups.LookupType(lookups.LTgame), searchSpecs.GameText)
+	if err != nil {
+		gameCode = lookups.GameFH4
+	}
+
+	fmt.Println(gameCode)
+
 	// perhaps, the searchTerm is a forza share code
-	i, _ := strconv.Atoi(searchTerm)
+	i, _ := strconv.Atoi(searchSpecs.SearchTerm)
+
+	fmt.Println(searchSpecs)
 
 	filter := bson.D{}
 	// use a simple & efficient query to return everything
-	if searchTerm == "" {
+	if searchSpecs.SearchTerm == "" {
 		filter = bson.D{
 			{Key: "courseTypeCD", Value: bson.D{{Key: "$exists", Value: "true"}}}, // return std and community courses
 		}
@@ -197,8 +205,8 @@ func (m CourseModel) SearchCourses(searchTerm string) ([]CourseListItem, error) 
 			{Key: "courseTypeCD", Value: bson.D{{Key: "$exists", Value: "true"}}}, // look for courses, next conditions will be AND (then OR)
 			{Key: "$or", Value: bson.A{
 				//bson.D{{Key: "name", Value: bson.D{{Key: "$eq", Value: searchTerm}}}},
-				bson.D{{Key: "name", Value: primitive.Regex{Pattern: ".*" + searchTerm + ".*", Options: "/i"}}}, // LIKE %searchTerm% (case-insensitive)
-				bson.D{{Key: "forzaSharing", Value: bson.D{{Key: "$eq", Value: i}}}},                            // 0 if searchTerm was alpha-numeric
+				bson.D{{Key: "name", Value: primitive.Regex{Pattern: ".*" + searchSpecs.SearchTerm + ".*", Options: "/i"}}}, // LIKE %searchTerm% (case-insensitive)
+				bson.D{{Key: "forzaSharing", Value: bson.D{{Key: "$eq", Value: i}}}},                                        // 0 if searchTerm was alpha-numeric
 			}},
 		}
 	}
@@ -208,14 +216,14 @@ func (m CourseModel) SearchCourses(searchTerm string) ([]CourseListItem, error) 
 
 	cursor, err := m.Collection.Find(ctx, filter, opts)
 	if err != nil {
-		return nil, err
+		return nil, helpers.WrapError(err, helpers.FuncName())
 	}
 
 	var courses []Course
 
 	err = cursor.All(ctx, &courses)
 	if err != nil {
-		return nil, err
+		return nil, helpers.WrapError(err, helpers.FuncName())
 	}
 
 	// check for empty result set (no error raised by find)
@@ -270,6 +278,7 @@ func (m CourseModel) GetCourse(courseID string) (*Course, error) {
 	}
 
 	// add look-ups
+	// ToDo: ext func - analog user
 	data.VisibilityText = database.GetLookupText(lookups.LookupType(lookups.LTvisibility), data.VisibilityCode)
 	data.GameText = database.GetLookupText(lookups.LookupType(lookups.LTgame), data.GameCode)
 	data.TypeText = database.GetLookupText(lookups.LookupType(lookups.LTcourseType), data.TypeCode)
