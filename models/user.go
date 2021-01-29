@@ -27,13 +27,17 @@ type User struct {
 	XBoxTag      string             `json:"XBoxTag" bson:"XBoxTag"`
 	LastSeenTS   time.Time          `json:"lastSeenTS" bson:"lastSeenTS,omitempty"`
 	Friends      []UserRef          `json:"friends" bson:"friends"`
+	// ToDo: Folloers evtl. in anderer Collection, wenn Array zu gross wird
+	// Following []UserRef
+	// Followers []UserRef
 }
 
 // Credentials is used for programmatic control
+// non-ptr values require annotations!
 type Credentials struct {
 	LoginName    string
-	RoleCode     int32
-	LanguageCode int32
+	RoleCode     int32 `bson:"roleCD"`
+	LanguageCode int32 `bson:"languageCD"`
 	Friends      []UserRef
 }
 

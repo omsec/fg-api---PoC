@@ -57,9 +57,10 @@ type CourseListItem struct {
 // CourseSearch is passed as the search params
 // ToDO: Binding: Required?
 type CourseSearch struct {
-	UserID     string // used to look-up Role & Friendlist
-	GameText   string // client should pass readable text in URL rather than codes
-	SearchTerm string
+	UserID      string // used to look-up Role & Friendlist
+	GameText    string // client should pass readable text in URL rather than codes
+	SearchTerm  string
+	Credentials *Credentials
 }
 
 // CourseModel provides the logic to the interface and access to the database
@@ -148,10 +149,6 @@ func (m CourseModel) CreateCourse(course *Course) (string, error) {
 // SearchCourses lists or searches course (ohne Comments, aber mit Files/Tags)
 func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem, error) {
 
-	// ToDo: add user-Struct as param (reduced) and check credentials
-	// filter except for admins
-	// -> ohne userId nicht prüfen (filter public)
-
 	// Verkleinerte/vereinfachte Struktur für Listen
 	// MongoDB muss eine passende Struktur erhalten um die Daten aufzunehmen (z. B. mit nested Arrays)
 	// das API kann die Daten dann in die Listenstruktur kopieren
@@ -176,8 +173,6 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 
 	opts := options.Find().SetProjection(fields).SetLimit(20).SetSort(sort)
 
-	// only list documents of "course" type
-
 	// https://docs.mongodb.com/manual/tutorial/query-documents/
 	// https://docs.mongodb.com/manual/reference/operator/query/#query-selectors
 	// https://stackoverflow.com/questions/3305561/how-to-query-mongodb-with-like
@@ -187,27 +182,72 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 		gameCode = lookups.GameFH4
 	}
 
-	fmt.Println(gameCode)
-
 	// perhaps, the searchTerm is a forza share code
 	i, _ := strconv.Atoi(searchSpecs.SearchTerm)
 
-	fmt.Println(searchSpecs)
-
+	// construct a document containing the search parameters
 	filter := bson.D{}
-	// use a simple & efficient query to return everything
-	if searchSpecs.SearchTerm == "" {
-		filter = bson.D{
-			{Key: "courseTypeCD", Value: bson.D{{Key: "$exists", Value: "true"}}}, // return std and community courses
+
+	// ToDo: (überlegen)
+	// kein User angemeldet => Credentials.RoleCode = GUEST => visibility = ALL
+	// Member = Vis prüfen
+	// Admin = keine Vis Prüfung
+
+	// checking the credentials-pointer is even more safe than just the UserID
+	if searchSpecs.Credentials == nil {
+		// anonymous visitors will only receive PUBLIC routes
+		if searchSpecs.SearchTerm == "" {
+			filter = bson.D{
+				// every next field is AND
+				{Key: "gameCD", Value: gameCode},                                      // $eq kann wegelassen werden
+				{Key: "courseTypeCD", Value: bson.D{{Key: "$exists", Value: "true"}}}, // return std and community courses
+				{Key: "visibilityCD", Value: lookups.VisibilityAll},
+			}
+		} else {
+			filter = bson.D{
+				// every next field is AND
+				{Key: "gameCD", Value: gameCode},                                      // $eq kann wegelassen werden
+				{Key: "courseTypeCD", Value: bson.D{{Key: "$exists", Value: "true"}}}, // return std and community courses
+				{Key: "visibilityCD", Value: lookups.VisibilityAll},
+				{Key: "$or", Value: bson.A{ // AND OR (...
+					bson.D{{Key: "name", Value: primitive.Regex{Pattern: ".*" + searchSpecs.SearchTerm + ".*", Options: "/i"}}}, // LIKE %searchTerm% (case-insensitive)
+					bson.D{{Key: "forzaSharing", Value: i}}, // 0 if searchTerm was alpha-numeric
+				}},
+			}
 		}
 	} else {
-		filter = bson.D{
-			{Key: "courseTypeCD", Value: bson.D{{Key: "$exists", Value: "true"}}}, // look for courses, next conditions will be AND (then OR)
-			{Key: "$or", Value: bson.A{
-				//bson.D{{Key: "name", Value: bson.D{{Key: "$eq", Value: searchTerm}}}},
-				bson.D{{Key: "name", Value: primitive.Regex{Pattern: ".*" + searchSpecs.SearchTerm + ".*", Options: "/i"}}}, // LIKE %searchTerm% (case-insensitive)
-				bson.D{{Key: "forzaSharing", Value: bson.D{{Key: "$eq", Value: i}}}},                                        // 0 if searchTerm was alpha-numeric
-			}},
+		// if a user is logged-in, check their privilidges
+		fmt.Printf("%s is logged in with role %v", searchSpecs.Credentials.LoginName, searchSpecs.Credentials.RoleCode)
+		if searchSpecs.Credentials.RoleCode == lookups.UserRoleAdmin {
+			// no visibility check needed for admins
+			fmt.Println("ADMIN")
+			if searchSpecs.SearchTerm == "" {
+				filter = bson.D{
+					// every next field is AND
+					{Key: "gameCD", Value: gameCode},                                      // $eq kann wegelassen werden
+					{Key: "courseTypeCD", Value: bson.D{{Key: "$exists", Value: "true"}}}, // return std and community courses
+					// visibility check removed
+				}
+			} else {
+				// apply search Term
+				filter = bson.D{
+					// every next field is AND
+					{Key: "gameCD", Value: gameCode},                                      // $eq kann wegelassen werden
+					{Key: "courseTypeCD", Value: bson.D{{Key: "$exists", Value: "true"}}}, // return std and community courses
+					// visibility check removed
+					{Key: "$or", Value: bson.A{ // AND OR (...
+						bson.D{{Key: "name", Value: primitive.Regex{Pattern: ".*" + searchSpecs.SearchTerm + ".*", Options: "/i"}}}, // LIKE %searchTerm% (case-insensitive)
+						bson.D{{Key: "forzaSharing", Value: i}}, // 0 if searchTerm was alpha-numeric
+					}},
+				}
+			}
+		} else {
+			// check visibility
+			if searchSpecs.SearchTerm == "" {
+
+			} else {
+				// apply search Term
+			}
 		}
 	}
 
@@ -219,6 +259,7 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 		return nil, helpers.WrapError(err, helpers.FuncName())
 	}
 
+	// receive results
 	var courses []Course
 
 	err = cursor.All(ctx, &courses)

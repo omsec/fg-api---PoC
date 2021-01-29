@@ -99,7 +99,17 @@ func ListCourses(c *gin.Context) {
 	search.GameText = c.Query("game")
 	search.SearchTerm = c.Query("search")
 
-	// fmt.Println(searchTerm)
+	// since models shouldn't open DB-connections on their own
+	// the user credentials are passed to it
+
+	// TODO:
+	// Funktion umbauen, dass ohne UserID die Def-Credentials kommen (role = Guest)
+	// Language soll als Custom Header übergeben werden (bei anonymen nicht vorhanden in DB)
+	// in search: Statt cred == nil halt cred.ADMIN (alles andere wäre dann GUEST/ANON (:nur ALL) oder Member (:Friends/Own))
+	if userID != "" {
+		// errors maybe ignored here, nil credentials will be treated as anonymous user
+		search.Credentials, _ = env.userModel.GetCredentials(userID)
+	}
 
 	// nötig?
 	// searchTerm = strings.TrimSpace(data.SearchTerm)
