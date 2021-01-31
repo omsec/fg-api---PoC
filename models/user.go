@@ -21,12 +21,12 @@ type User struct {
 	Password     string             `json:"password" bson:"password"` // hash value
 	RoleCode     int32              `json:"roleCode" bson:"roleCD"`
 	RoleText     string             `json:"roleText" bson:"-"`
-	LanguageCode int32              `json:"languageCode" bson:"languageCD"`
+	LanguageCode int32              `json:"languageCode" bson:"languageCD" header:"Language"`
 	LanguageText string             `json:"languageText" bson:"-"`
 	EMailAddress string             `json:"eMail" bson:"eMail"`
 	XBoxTag      string             `json:"XBoxTag" bson:"XBoxTag"`
 	LastSeenTS   time.Time          `json:"lastSeenTS" bson:"lastSeenTS,omitempty"`
-	Friends      []UserRef          `json:"friends" bson:"friends"`
+	Friends      []UserRef          `json:"friends" bson:"friends,omitempty"`
 	// ToDo: Folloers evtl. in anderer Collection, wenn Array zu gross wird
 	// Following []UserRef
 	// Followers []UserRef
@@ -37,7 +37,7 @@ type User struct {
 type Credentials struct {
 	LoginName    string
 	RoleCode     int32 `bson:"roleCD"`
-	LanguageCode int32 `bson:"languageCD"`
+	LanguageCode int32 `bson:"languageCD"` // ToDo: Lesen aus Header für ANONYM, DB für Members (override-Möglichkeit)
 	Friends      []UserRef
 }
 
@@ -255,32 +255,39 @@ func (m UserModel) SetPassword(userID primitive.ObjectID, newPassword string) er
 func (m UserModel) GetCredentials(UserID string) (*Credentials, error) {
 	var credentials Credentials
 
-	// https://ildar.pro/golang-hints-create-mongodb-object-id-from-string/
-	id, err := primitive.ObjectIDFromHex(UserID)
-	if err != nil {
-		return nil, ErrInvalidUser
-	}
+	if UserID == "" {
+		// anonymous (visitor) receives default role
+		credentials.RoleCode = lookups.UserRoleGuest
+	} else {
+		// look-up credentials in database
 
-	fields := bson.D{
-		{Key: "_id", Value: 0}, // _id kommt immer, ausser es wird explizit ausgeschlossen (0)
-		{Key: "loginName", Value: 1},
-		{Key: "roleCD", Value: 1}, // {Key: "metaInfo.rating", Value: 1}, -- so könnte die nested struct eingeschränkt werden
-		{Key: "languageCD", Value: 1},
-		{Key: "friends", Value: 1},
-	}
-
-	opts := options.FindOne().SetProjection(fields)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel() // nach 10 Sekunden abbrechen
-
-	err = m.Collection.FindOne(ctx, bson.M{"_id": id}, opts).Decode(&credentials)
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
+		// https://ildar.pro/golang-hints-create-mongodb-object-id-from-string/
+		id, err := primitive.ObjectIDFromHex(UserID)
+		if err != nil {
 			return nil, ErrInvalidUser
 		}
-		// pass any other error
-		return nil, helpers.WrapError(err, helpers.FuncName())
+
+		fields := bson.D{
+			{Key: "_id", Value: 0}, // _id kommt immer, ausser es wird explizit ausgeschlossen (0)
+			{Key: "loginName", Value: 1},
+			{Key: "roleCD", Value: 1}, // {Key: "metaInfo.rating", Value: 1}, -- so könnte die nested struct eingeschränkt werden
+			{Key: "languageCD", Value: 1},
+			{Key: "friends", Value: 1},
+		}
+
+		opts := options.FindOne().SetProjection(fields)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel() // nach 10 Sekunden abbrechen
+
+		err = m.Collection.FindOne(ctx, bson.M{"_id": id}, opts).Decode(&credentials)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				return nil, ErrInvalidUser
+			}
+			// pass any other error
+			return nil, helpers.WrapError(err, helpers.FuncName())
+		}
 	}
 
 	return &credentials, nil
@@ -288,6 +295,9 @@ func (m UserModel) GetCredentials(UserID string) (*Credentials, error) {
 
 // AddFriend adds another user to the friendlist
 func (m UserModel) AddFriend(targetUserID string, friendUserID string) error {
+
+	// ToDo:
+	// auch die gegenrichtung erstellen (add target to friend)
 
 	// ToDO: Prüfung entfernen bei mehreren; im Loop einfach ignorieren ohne FEhler
 	// überhaupt nötig? hängt vom gui ab
@@ -333,6 +343,8 @@ func (m UserModel) AddFriend(targetUserID string, friendUserID string) error {
 
 // RemoveFriend adds another user to the friendlist
 func (m UserModel) RemoveFriend(targetUserID string, friendUserID string) error {
+
+	// auch die gegenrichtung löschen (remove target from friend)
 
 	// ToDO: Prüfung entfernen bei mehreren; im Loop einfach ignorieren ohne FEhler
 	// überhaupt nötig? hängt vom gui ab

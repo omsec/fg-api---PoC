@@ -188,13 +188,7 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 	// construct a document containing the search parameters
 	filter := bson.D{}
 
-	// ToDo: (überlegen)
-	// kein User angemeldet => Credentials.RoleCode = GUEST => visibility = ALL
-	// Member = Vis prüfen
-	// Admin = keine Vis Prüfung
-
-	// checking the credentials-pointer is even more safe than just the UserID
-	if searchSpecs.Credentials == nil {
+	if searchSpecs.Credentials.RoleCode == lookups.UserRoleGuest {
 		// anonymous visitors will only receive PUBLIC routes
 		if searchSpecs.SearchTerm == "" {
 			filter = bson.D{
@@ -216,8 +210,8 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 			}
 		}
 	} else {
-		// if a user is logged-in, check their privilidges
-		fmt.Printf("%s is logged in with role %v", searchSpecs.Credentials.LoginName, searchSpecs.Credentials.RoleCode)
+		// if a user is logged-in, check their privilidges (must be Admin or Member)
+		//fmt.Printf("%s is logged in with role %v", searchSpecs.Credentials.LoginName, searchSpecs.Credentials.RoleCode)
 		if searchSpecs.Credentials.RoleCode == lookups.UserRoleAdmin {
 			// no visibility check needed for admins
 			fmt.Println("ADMIN")
@@ -243,10 +237,51 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 			}
 		} else {
 			// check visibility
-			if searchSpecs.SearchTerm == "" {
+			userID, err := primitive.ObjectIDFromHex(searchSpecs.UserID)
+			if err != nil {
+				return nil, ErrNoData
+			}
 
+			friendIDs := make([]primitive.ObjectID, len(searchSpecs.Credentials.Friends))
+			for i, friend := range searchSpecs.Credentials.Friends {
+				friendIDs[i] = friend.ID
+			}
+
+			if searchSpecs.SearchTerm == "" {
+				filter = bson.D{
+					// every next field is AND
+					{Key: "gameCD", Value: gameCode},                                      // $eq kann wegelassen werden
+					{Key: "courseTypeCD", Value: bson.D{{Key: "$exists", Value: "true"}}}, // return std and community courses
+					// visibility check
+					{Key: "$or", Value: bson.A{
+						bson.D{{Key: "visibilityCD", Value: 0}},
+						bson.D{{Key: "metaInfo.createdID", Value: userID}},
+						bson.D{{Key: "$and", Value: bson.A{
+							bson.D{{Key: "visibilityCD", Value: 1}},
+							bson.D{{Key: "metaInfo.createdID", Value: bson.D{{Key: "$in", Value: friendIDs}}}}, // nested doc for $in
+						}}}, // nested $and-array im $or
+					}}, // $or-array
+				}
 			} else {
-				// apply search Term
+				filter = bson.D{
+					// every next field is AND
+					{Key: "gameCD", Value: gameCode},                                      // $eq kann wegelassen werden
+					{Key: "courseTypeCD", Value: bson.D{{Key: "$exists", Value: "true"}}}, // return std and community courses
+					// visibility check
+					{Key: "$or", Value: bson.A{
+						bson.D{{Key: "visibilityCD", Value: 0}},
+						bson.D{{Key: "metaInfo.createdID", Value: userID}},
+						bson.D{{Key: "$and", Value: bson.A{
+							bson.D{{Key: "visibilityCD", Value: 1}},
+							bson.D{{Key: "metaInfo.createdID", Value: bson.D{{Key: "$in", Value: friendIDs}}}}, // nested doc for $in
+						}}}, // nested $and-array im $or
+					}}, // $or-array
+					// apply search term
+					{Key: "$or", Value: bson.A{ // AND OR (...
+						bson.D{{Key: "name", Value: primitive.Regex{Pattern: ".*" + searchSpecs.SearchTerm + ".*", Options: "/i"}}}, // LIKE %searchTerm% (case-insensitive)
+						bson.D{{Key: "forzaSharing", Value: i}}, // 0 if searchTerm was alpha-numeric
+					}}, // $or-array
+				}
 			}
 		}
 	}

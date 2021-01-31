@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"fmt"
 	"forza-garage/authentication"
 	"forza-garage/models"
 	"net/http"
@@ -72,7 +73,7 @@ func AddFriend(c *gin.Context) {
 		default:
 			apiError.Code = SystemError
 			apiError.Message = apiError.String(apiError.Code)
-			// fmt.Println(err)
+			fmt.Println(err)
 			c.JSON(http.StatusInternalServerError, apiError)
 		}
 		return

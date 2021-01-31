@@ -1,9 +1,11 @@
 package controllers
 
 import (
+	"fmt"
 	"forza-garage/authentication"
 	"forza-garage/models"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -98,17 +100,15 @@ func ListCourses(c *gin.Context) {
 	search.UserID = userID
 	search.GameText = c.Query("game")
 	search.SearchTerm = c.Query("search")
-
 	// since models shouldn't open DB-connections on their own
 	// the user credentials are passed to it
+	// errors maybe ignored here and will be treated as anonymous user
+	search.Credentials, _ = env.userModel.GetCredentials(userID)
 
-	// TODO:
-	// Funktion umbauen, dass ohne UserID die Def-Credentials kommen (role = Guest)
-	// Language soll als Custom Header übergeben werden (bei anonymen nicht vorhanden in DB)
-	// in search: Statt cred == nil halt cred.ADMIN (alles andere wäre dann GUEST/ANON (:nur ALL) oder Member (:Friends/Own))
-	if userID != "" {
-		// errors maybe ignored here, nil credentials will be treated as anonymous user
-		search.Credentials, _ = env.userModel.GetCredentials(userID)
+	// use language submitted by client for anonymous users (rather than the one stored in database)
+	if userID == "" {
+		i, _ := strconv.Atoi(c.Request.Header.Get("Language")) // default 0, EN
+		search.Credentials.LanguageCode = int32(i)
 	}
 
 	// nötig?
@@ -125,7 +125,7 @@ func ListCourses(c *gin.Context) {
 		// technical errors
 		apiError.Code = SystemError
 		apiError.Message = apiError.String(apiError.Code)
-		// fmt.Println(err)
+		fmt.Println(err)
 		c.JSON(http.StatusInternalServerError, apiError)
 		return
 	}
