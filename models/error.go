@@ -9,6 +9,11 @@ import (
 var (
 	ErrNoData          = errors.New("no records found")
 	ErrMultipleRecords = errors.New("mulitple records found")
+	ErrGuest           = errors.New("user is guest")
+	ErrNotFriend       = errors.New("user is not in friendlist")
+	ErrPrivate         = errors.New("item is private")
+	ErrRecordChanged   = errors.New("write conflict")
+	ErrDenied          = errors.New("not allowed") // eg. upd/del not allowed
 )
 
 // custom error types

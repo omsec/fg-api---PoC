@@ -2,7 +2,6 @@ package models
 
 import (
 	"context"
-	"fmt"
 	"forza-garage/database"
 	"forza-garage/helpers"
 	"forza-garage/lookups"
@@ -55,9 +54,8 @@ type CourseListItem struct {
 }
 
 // CourseSearch is passed as the search params
-// ToDO: Binding: Required?
 type CourseSearch struct {
-	UserID      string // used to look-up Role & Friendlist
+	// ToDo: UserID (ObjectID) in Credentials verschieben (auch für get etc. benutzen)
 	GameText    string // client should pass readable text in URL rather than codes
 	SearchTerm  string
 	Credentials *Credentials
@@ -140,7 +138,7 @@ func (m CourseModel) CreateCourse(course *Course) (string, error) {
 			return "", ErrForzaSharingCodeTaken
 		}
 		// any other error
-		return "", err // primitive.NilObjectID.Hex() ? probly useless
+		return "", helpers.WrapError(err, helpers.FuncName()) // primitive.NilObjectID.Hex() ? probly useless
 	}
 
 	return res.InsertedID.(primitive.ObjectID).Hex(), nil
@@ -214,7 +212,6 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 		//fmt.Printf("%s is logged in with role %v", searchSpecs.Credentials.LoginName, searchSpecs.Credentials.RoleCode)
 		if searchSpecs.Credentials.RoleCode == lookups.UserRoleAdmin {
 			// no visibility check needed for admins
-			fmt.Println("ADMIN")
 			if searchSpecs.SearchTerm == "" {
 				filter = bson.D{
 					// every next field is AND
@@ -237,11 +234,6 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 			}
 		} else {
 			// check visibility
-			userID, err := primitive.ObjectIDFromHex(searchSpecs.UserID)
-			if err != nil {
-				return nil, ErrNoData
-			}
-
 			friendIDs := make([]primitive.ObjectID, len(searchSpecs.Credentials.Friends))
 			for i, friend := range searchSpecs.Credentials.Friends {
 				friendIDs[i] = friend.ID
@@ -255,7 +247,7 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 					// visibility check
 					{Key: "$or", Value: bson.A{
 						bson.D{{Key: "visibilityCD", Value: 0}},
-						bson.D{{Key: "metaInfo.createdID", Value: userID}},
+						bson.D{{Key: "metaInfo.createdID", Value: searchSpecs.Credentials.UserID}},
 						bson.D{{Key: "$and", Value: bson.A{
 							bson.D{{Key: "visibilityCD", Value: 1}},
 							bson.D{{Key: "metaInfo.createdID", Value: bson.D{{Key: "$in", Value: friendIDs}}}}, // nested doc for $in
@@ -270,7 +262,7 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 					// visibility check
 					{Key: "$or", Value: bson.A{
 						bson.D{{Key: "visibilityCD", Value: 0}},
-						bson.D{{Key: "metaInfo.createdID", Value: userID}},
+						bson.D{{Key: "metaInfo.createdID", Value: searchSpecs.Credentials.UserID}},
 						bson.D{{Key: "$and", Value: bson.A{
 							bson.D{{Key: "visibilityCD", Value: 1}},
 							bson.D{{Key: "metaInfo.createdID", Value: bson.D{{Key: "$in", Value: friendIDs}}}}, // nested doc for $in
@@ -333,9 +325,7 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 }
 
 // GetCourse returns one
-func (m CourseModel) GetCourse(courseID string) (*Course, error) {
-
-	// ToDO: check visiblity/Permissions
+func (m CourseModel) GetCourse(courseID string, credentials *Credentials) (*Course, error) {
 
 	id, err := primitive.ObjectIDFromHex(courseID)
 	if err != nil {
@@ -347,19 +337,125 @@ func (m CourseModel) GetCourse(courseID string) (*Course, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel() // nach 10 Sekunden abbrechen
 
-	// später vielleicht project() wenn's zu viele fleder werden (excl. nested oder sowas)
+	// später vielleicht project() wenn's zu viele felder werden (excl. nested oder sowas)
 	err = m.Collection.FindOne(ctx, bson.M{"_id": id}).Decode(&data)
 	if err != nil {
 		return nil, ErrNoData
 	}
 
-	// add look-ups
-	// ToDo: ext func - analog user
-	data.VisibilityText = database.GetLookupText(lookups.LookupType(lookups.LTvisibility), data.VisibilityCode)
-	data.GameText = database.GetLookupText(lookups.LookupType(lookups.LTgame), data.GameCode)
-	data.TypeText = database.GetLookupText(lookups.LookupType(lookups.LTcourseType), data.TypeCode)
-	data.SeriesText = database.GetLookupText(lookups.LookupType(lookups.LTseries), data.SeriesCode)
-	data.CarClassText = database.GetLookupText(lookups.LookupType(lookups.LTcarClass), data.CarClassCode)
+	err = GrantPermissions(data.VisibilityCode, data.MetaInfo.CreatedID, credentials)
+	if err != nil {
+		// no wrapping needed, since function returns app errors
+		return nil, err
+	}
+
+	m.addLookups(&data)
 
 	return &data, nil
+}
+
+// UpdateCourse modifies a given course
+func (m CourseModel) UpdateCourse(course *Course, credentials *Credentials) error {
+
+	// read "metadata" to check permissions and perform optimistic locking
+	// könnte eigentlich ausgelagert werden
+	fields := bson.D{
+		{Key: "_id", Value: 0},
+		{Key: "metaInfo.createdID", Value: 1},
+		{Key: "metaInfo.recVer", Value: 1},
+		{Key: "visibilityCD", Value: 1},
+	}
+
+	filter := bson.D{{Key: "_id", Value: course.ID}}
+
+	data := struct {
+		CreatedID      primitive.ObjectID `bson:"_id"`
+		RecVer         int64              `bson:"recVer"`
+		VisibilityCode int32              `bson:"visibilityCD"`
+	}{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel() // nach 10 Sekunden abbrechen
+
+	// alternative schreibweisen:
+	//err := m.Collection.FindOne(ctx, bson.D{{Key: "_id", Value: course.ID}}, options.FindOne().SetProjection(fields)).Decode(&data)
+	//err := m.Collection.FindOne(ctx, bson.M{"_id": course.ID}, options.FindOne().SetProjection(fields)).Decode(&data)
+
+	err := m.Collection.FindOne(ctx, filter, options.FindOne().SetProjection(fields)).Decode(&data)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return ErrNoData // document might have been deleted
+		}
+		// pass any other error
+		return helpers.WrapError(err, helpers.FuncName())
+	}
+
+	if (data.CreatedID != credentials.UserID) || (credentials.RoleCode < lookups.UserRoleAdmin) {
+		return ErrDenied
+	}
+
+	err = GrantPermissions(data.VisibilityCode, data.CreatedID, credentials)
+	if err != nil {
+		// no wrapping needed, since function returns app errors
+		return err
+	}
+
+	if data.RecVer != course.MetaInfo.RecVer {
+		// document was changed by another user since last read
+		return ErrRecordChanged
+	}
+
+	// ToDO: einzel-upd wohl besser, oder gar replace?
+	// replace nicht "nachhaltig" wenn bspw. Arrays/Nesteds drin sind, die gar nicht immer gelesen werden
+	// definition für den moment: "alle änderbaren" felder halt neu setzen
+	// arrays somit ersetzen, oder in spez. services ändern (z. B. add friends, falls embedded)
+
+	// set "systemfields"
+	course.MetaInfo.ModifiedID = credentials.UserID
+	course.MetaInfo.ModifiedName = credentials.LoginName
+	course.MetaInfo.ModifiedTS = time.Now()
+	course.MetaInfo.TouchedTS = course.MetaInfo.ModifiedTS
+
+	// set fields to be possibily updated
+	fields = bson.D{
+		// systemfields
+		{Key: "$set", Value: bson.D{{Key: "metaInfo.modifiedTS", Value: course.MetaInfo.ModifiedTS}}},
+		{Key: "$set", Value: bson.D{{Key: "metaInfo.modifiedID", Value: course.MetaInfo.ModifiedID}}},
+		{Key: "$set", Value: bson.D{{Key: "metaInfo.modifiedName", Value: course.MetaInfo.ModifiedName}}},
+		{Key: "$set", Value: bson.D{{Key: "metaInfo.touchedTS", Value: course.MetaInfo.TouchedTS}}},
+		{Key: "$inc", Value: bson.D{{Key: "metaInfo.recVer", Value: 1}}},
+		// payload
+		{Key: "$set", Value: bson.D{{Key: "visibilityCD", Value: course.VisibilityCode}}},
+		{Key: "$set", Value: bson.D{{Key: "gameCD", Value: course.GameCode}}},
+		// typeCode is static
+		{Key: "$set", Value: bson.D{{Key: "forzaSharing", Value: course.ForzaSharing}}},
+		{Key: "$set", Value: bson.D{{Key: "name", Value: course.Name}}},
+		{Key: "$set", Value: bson.D{{Key: "seriesCD", Value: course.SeriesCode}}},
+		{Key: "$set", Value: bson.D{{Key: "carClassCD", Value: course.CarClassCode}}},
+	}
+
+	result, err := m.Collection.UpdateOne(ctx, filter, fields)
+	if err != nil {
+		return helpers.WrapError(err, helpers.FuncName())
+	}
+
+	if result.MatchedCount == 0 {
+		return ErrNoData // document might have been deleted
+	}
+
+	// ToDO: überlegen - rückgsabewerte sinnvoll? (z. B. timestamp? oder die ID analog add?)
+	return nil
+}
+
+// internal helpers (private methods)
+
+// actually that's not immutable, but ok here
+func (m CourseModel) addLookups(course *Course) *Course {
+	course.VisibilityText = database.GetLookupText(lookups.LookupType(lookups.LTvisibility), course.VisibilityCode)
+	course.GameText = database.GetLookupText(lookups.LookupType(lookups.LTgame), course.GameCode)
+	course.TypeText = database.GetLookupText(lookups.LookupType(lookups.LTcourseType), course.TypeCode)
+	course.SeriesText = database.GetLookupText(lookups.LookupType(lookups.LTseries), course.SeriesCode)
+	course.CarClassText = database.GetLookupText(lookups.LookupType(lookups.LTcarClass), course.CarClassCode)
+
+	return course
 }

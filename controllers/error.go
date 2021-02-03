@@ -1,6 +1,10 @@
 package controllers
 
-import "errors"
+import (
+	"errors"
+	"forza-garage/models"
+	"net/http"
+)
 
 // generic custom error types
 var (
@@ -13,10 +17,37 @@ type ErrorResponse struct {
 	Message string `json:"msg"`
 }
 
+// HandleError encodes the std ErrorResponse
+func HandleError(err error) (httpStatus int, apiError ErrorResponse) {
+
+	if err == nil {
+		apiError.Code = 0
+		apiError.Message = ""
+
+		return 0, apiError
+	}
+
+	switch err {
+	case models.ErrCourseNameMissing:
+		apiError.Code = CourseNameMissing
+		apiError.Message = apiError.String(apiError.Code)
+		httpStatus = http.StatusUnprocessableEntity
+	default:
+		apiError.Code = SystemError
+		apiError.Message = apiError.String(apiError.Code)
+		httpStatus = http.StatusInternalServerError
+	}
+	return httpStatus, apiError
+}
+
 // Application Error Codes (API Errors)
 const (
 	InvalidJSON int32 = (10000 + iota)
 	InvalidRequest
+	// permission
+	PermissionGuest
+	PermissionNotShared
+	PermissionPrivate
 	// user
 	InvalidFriend
 	// course
@@ -28,11 +59,18 @@ const (
 func (er ErrorResponse) String(code int32) string {
 	msg := ""
 	switch code {
-	// common
+	// common (system)
 	case InvalidJSON:
 		msg = "Invalid JSON"
 	case InvalidRequest:
 		msg = "Invalid Request" // JSON was correct, data was not
+	// permision (item access)
+	case PermissionGuest:
+		msg = "user is guest"
+	case PermissionNotShared:
+		msg = "item is not shared" // user is not friends with creator
+	case PermissionPrivate:
+		msg = "item is private"
 	// user
 	case InvalidFriend:
 		msg = "could not add or remove friend"

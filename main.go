@@ -53,6 +53,7 @@ func handleRequests() {
 	router.GET("/courses", controllers.ListCourses)
 	router.GET("/courses/:id", controllers.GetCourse)
 	router.POST("/course/add", authentication.TokenAuthMiddleware(), controllers.AddCourse)
+	router.PUT("/course/edit/:id", authentication.TokenAuthMiddleware(), controllers.UpdateCourse)
 	router.POST("/course/exists", authentication.TokenAuthMiddleware(), controllers.ExistsForzaShare) // protected to prevent sniffs ;-)
 
 	/*

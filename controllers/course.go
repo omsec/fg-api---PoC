@@ -97,7 +97,6 @@ func ListCourses(c *gin.Context) {
 	var search *models.CourseSearch
 	search = new(models.CourseSearch)
 
-	search.UserID = userID
 	search.GameText = c.Query("game")
 	search.SearchTerm = c.Query("search")
 	// since models shouldn't open DB-connections on their own
@@ -143,30 +142,114 @@ func GetCourse(c *gin.Context) {
 		data *models.Course
 	)
 
-	// ToDo: pass userID to model
 	// no error checking because it's optional (public courses only)
-	// userID, _ = authentication.Authenticate(c.Request)
+	userID, _ := authentication.Authenticate(c.Request)
+	credentials, _ := env.userModel.GetCredentials(userID)
+
+	// use language submitted by client for anonymous users (rather than the one stored in database)
+	if userID == "" {
+		i, _ := strconv.Atoi(c.Request.Header.Get("Language")) // default 0, EN
+		credentials.LanguageCode = int32(i)
+	}
 
 	// muss nicht auf null geprüft werden, denn ohne Parameter ist es eine andere Route (wie in Angular)
 	// typ wird automatisch gesetzt (kann aber STR sein)
 	var id = c.Param("id")
 
-	data, err = env.courseModel.GetCourse(id)
+	data, err = env.courseModel.GetCourse(id, credentials)
 	if err != nil {
-		// ToDO: Check Vsibility
 		switch err {
 		case models.ErrNoData:
 			c.Status(http.StatusNoContent)
+		case models.ErrGuest:
+			apiError.Code = PermissionGuest
+			apiError.Message = apiError.String(apiError.Code)
+			c.JSON(http.StatusUnprocessableEntity, apiError)
+		case models.ErrNotFriend:
+			apiError.Code = PermissionNotShared
+			apiError.Message = apiError.String(apiError.Code)
+			c.JSON(http.StatusUnprocessableEntity, apiError)
+		case models.ErrPrivate:
+			apiError.Code = PermissionPrivate
+			apiError.Message = apiError.String(apiError.Code)
+			c.JSON(http.StatusUnprocessableEntity, apiError)
 		default:
 			apiError.Code = SystemError
 			apiError.Message = apiError.String(apiError.Code)
-			// fmt.Println(err)
-			c.JSON(http.StatusInternalServerError, apiError)
+			fmt.Println(err)
+			c.JSON(http.StatusUnprocessableEntity, apiError)
 		}
 		return
 	}
 
 	c.JSON(http.StatusOK, data)
+}
+
+// UpdateCourse modifies "core" fields
+func UpdateCourse(c *gin.Context) {
+
+	var (
+		err      error
+		data     models.Course
+		apiError ErrorResponse // declared here to raise own errors
+	)
+
+	// evtl. kurz syntaxc if ok.... mit getCred...
+	userID, err := authentication.Authenticate(c.Request)
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	credentials, _ := env.userModel.GetCredentials(userID)
+
+	// use "shouldBind" not all fields are required in this context
+	if err = c.ShouldBindJSON(&data); err != nil {
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	}
+
+	// validate request
+	course, err := env.courseModel.Validate(data)
+	if err != nil {
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
+		return
+	}
+	/*
+		if err != nil {
+			switch err {
+			case models.ErrCourseNameMissing:
+				apiError.Code = CourseNameMissing
+				apiError.Message = apiError.String(apiError.Code)
+				c.JSON(http.StatusUnprocessableEntity, apiError)
+			default:
+				apiError.Code = SystemError
+				apiError.Message = apiError.String(apiError.Code)
+				// fmt.Println(err)
+				c.JSON(http.StatusInternalServerError, apiError)
+			}
+			return
+		}
+	*/
+
+	err = env.courseModel.UpdateCourse(course, credentials)
+	if err != nil {
+		switch err {
+		case models.ErrForzaSharingCodeTaken:
+			apiError.Code = ForzaShareTaken
+			apiError.Message = apiError.String(apiError.Code)
+			c.JSON(http.StatusUnprocessableEntity, apiError)
+		default:
+			c.JSON(http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+
+	c.Status(http.StatusNoContent) // evtl. auch 205
+
 }
 
 // Additional & Helper Services

@@ -35,6 +35,7 @@ type User struct {
 // Credentials is used for programmatic control
 // non-ptr values require annotations!
 type Credentials struct {
+	UserID       primitive.ObjectID
 	LoginName    string
 	RoleCode     int32 `bson:"roleCD"`
 	LanguageCode int32 `bson:"languageCD"` // ToDo: Lesen aus Header für ANONYM, DB für Members (override-Möglichkeit)
@@ -256,6 +257,7 @@ func (m UserModel) GetCredentials(UserID string) (*Credentials, error) {
 	var credentials Credentials
 
 	if UserID == "" {
+		credentials.UserID = primitive.NilObjectID
 		// anonymous (visitor) receives default role
 		credentials.RoleCode = lookups.UserRoleGuest
 	} else {
@@ -288,6 +290,7 @@ func (m UserModel) GetCredentials(UserID string) (*Credentials, error) {
 			// pass any other error
 			return nil, helpers.WrapError(err, helpers.FuncName())
 		}
+		credentials.UserID = id
 	}
 
 	return &credentials, nil
@@ -385,6 +388,44 @@ func (m UserModel) RemoveFriend(targetUserID string, friendUserID string) error 
 
 	fmt.Println(res)
 
+	return nil
+}
+
+// public "static" methods
+
+// UserReferenced scans a slice for a given item
+func UserReferenced(slice []UserRef, val primitive.ObjectID) bool {
+	for _, item := range slice {
+		if item.ID == val {
+			return true
+		}
+	}
+	return false
+}
+
+// GrantPermissions enforces access rights
+func GrantPermissions(itemVisibilityCode int32, itemCreatorID primitive.ObjectID, credentials *Credentials) error {
+
+	if credentials.RoleCode == lookups.UserRoleAdmin {
+		return nil
+	}
+
+	if itemVisibilityCode == lookups.VisibilityMembers && credentials.RoleCode == lookups.UserRoleGuest {
+		// get a log-in and make friends
+		return ErrGuest
+	}
+
+	if (itemVisibilityCode == lookups.VisibilityMembers) && (UserReferenced(credentials.Friends, itemCreatorID) == false) && (itemCreatorID != credentials.UserID) {
+		// make friends with them
+		return ErrNotFriend
+	}
+
+	if itemVisibilityCode == lookups.VisibilityNone && (credentials.UserID != itemCreatorID) {
+		// ask them to share
+		return ErrPrivate
+	}
+
+	// all checks passed
 	return nil
 }
 
