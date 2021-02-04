@@ -42,8 +42,13 @@ func HandleError(err error) (httpStatus int, apiError ErrorResponse) {
 
 // Application Error Codes (API Errors)
 const (
+	// client/api
 	InvalidJSON int32 = (10000 + iota)
 	InvalidRequest
+	// generic system
+	MultipleRecords
+	RecordChanged
+	ActionDenied
 	// permission
 	PermissionGuest
 	PermissionNotShared
@@ -64,6 +69,12 @@ func (er ErrorResponse) String(code int32) string {
 		msg = "Invalid JSON"
 	case InvalidRequest:
 		msg = "Invalid Request" // JSON was correct, data was not
+	case MultipleRecords:
+		msg = "multiple records found"
+	case RecordChanged:
+		msg = "record changed by another user"
+	case ActionDenied:
+		msg = "update/delete action not allowed"
 	// permision (item access)
 	case PermissionGuest:
 		msg = "user is guest"
