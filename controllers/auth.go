@@ -231,6 +231,66 @@ func Refresh(c *gin.Context) {
 	c.JSON(http.StatusOK, &dbUser)
 }
 
+// VerifyPassword is used whenever a password must be re-typed during a session
+// (eg. changePassword or any actions that required increased security)
+func VerifyPassword(c *gin.Context) {
+
+	var (
+		err       error
+		givenUser models.User
+		dbUser    *models.User
+	)
+
+	userID, err := authentication.Authenticate(c.Request)
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	// use std struct (reduced fieldset)
+	if err = c.ShouldBindJSON(&givenUser); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, "invalid json")
+		return
+	}
+
+	// check for required fields
+	givenUser.LoginName = strings.TrimSpace(givenUser.LoginName)
+	givenUser.Password = strings.TrimSpace(givenUser.Password)
+	if len(givenUser.LoginName) == 0 || len(givenUser.Password) == 0 {
+		c.JSON(http.StatusForbidden, models.ErrInvalidUser.Error())
+		return
+	}
+
+	// wrap response into an object
+	res := struct {
+		Granted bool `json:"granted"`
+	}{false}
+
+	// Benutzer in der DB suchen und das Profil laden (via ID aus Token)
+	dbUser, err = env.userModel.GetUserByID(userID)
+	if err != nil {
+		// user does not exist (return false)
+		if err == models.ErrInvalidUser {
+			c.JSON(http.StatusOK, res)
+			return
+		}
+		// technical error
+		c.JSON(http.StatusInternalServerError, nil) // make client say "please try again later"
+		return
+	}
+
+	// Passt der Benutzername zur ID im Token?
+	if givenUser.LoginName != dbUser.LoginName {
+		c.JSON(http.StatusOK, res)
+		return
+	}
+
+	// übergibt das unverschlüsselte PWD vom Login und das verschlüsselte aus der DB
+	res.Granted = env.userModel.CheckPassword(givenUser.Password, *dbUser)
+
+	c.JSON(http.StatusOK, res)
+}
+
 // ChangePassword sets a new password
 func ChangePassword(c *gin.Context) {
 

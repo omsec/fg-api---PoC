@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"errors"
+	"fmt"
 	"forza-garage/models"
 	"net/http"
 )
@@ -27,9 +28,58 @@ func HandleError(err error) (httpStatus int, apiError ErrorResponse) {
 		return 0, apiError
 	}
 
+	fmt.Println(err)
 	switch err {
+	// system
+	case models.ErrMultipleRecords:
+		apiError.Code = MultipleRecords
+		apiError.Message = apiError.String(apiError.Code)
+		httpStatus = http.StatusInternalServerError
+	case models.ErrRecordChanged:
+		apiError.Code = RecordChanged
+		apiError.Message = apiError.String(apiError.Code)
+		httpStatus = http.StatusInternalServerError // ToDO: evtl. was anderes?
+	// permissions
+	case models.ErrGuest:
+		apiError.Code = PermissionGuest
+		apiError.Message = apiError.String(apiError.Code)
+		httpStatus = http.StatusUnprocessableEntity
+	case models.ErrNotFriend:
+		apiError.Code = PermissionNotShared
+		apiError.Message = apiError.String(apiError.Code)
+		httpStatus = http.StatusUnprocessableEntity
+	case models.ErrPrivate:
+		apiError.Code = PermissionPrivate
+		apiError.Message = apiError.String(apiError.Code)
+		httpStatus = http.StatusUnprocessableEntity
+	case models.ErrDenied:
+		apiError.Code = ActionDenied
+		apiError.Message = apiError.String(apiError.Code)
+		httpStatus = http.StatusUnprocessableEntity
+		// user
+	case models.ErrUserNameNotAvailable:
+		apiError.Code = UserNameTaken
+		apiError.Message = apiError.String(apiError.Code)
+		httpStatus = http.StatusUnprocessableEntity
+	case models.ErrEMailAddressTaken:
+		apiError.Code = EMailAddressTaken
+		apiError.Message = apiError.String(apiError.Code)
+		httpStatus = http.StatusUnprocessableEntity
+	case models.ErrInvalidUser:
+		apiError.Code = InvalidRequest
+		apiError.Message = apiError.String(apiError.Code)
+		httpStatus = http.StatusUnprocessableEntity
+	case models.ErrInvalidPassword:
+		apiError.Code = InvalidPassword
+		apiError.Message = apiError.String(apiError.Code)
+		httpStatus = http.StatusUnprocessableEntity
+	// course
 	case models.ErrCourseNameMissing:
 		apiError.Code = CourseNameMissing
+		apiError.Message = apiError.String(apiError.Code)
+		httpStatus = http.StatusUnprocessableEntity
+	case models.ErrForzaSharingCodeTaken:
+		apiError.Code = ForzaShareTaken
 		apiError.Message = apiError.String(apiError.Code)
 		httpStatus = http.StatusUnprocessableEntity
 	default:
@@ -54,6 +104,9 @@ const (
 	PermissionNotShared
 	PermissionPrivate
 	// user
+	UserNameTaken
+	EMailAddressTaken
+	InvalidPassword
 	InvalidFriend
 	// course
 	CourseNameMissing

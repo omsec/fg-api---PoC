@@ -1,9 +1,7 @@
 package controllers
 
 import (
-	"fmt"
 	"forza-garage/authentication"
-	"forza-garage/models"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -65,21 +63,10 @@ func AddFriend(c *gin.Context) {
 
 	err = env.userModel.AddFriend(userID, data.FriendID)
 	if err != nil {
-		switch err {
-		case models.ErrInvalidFriend:
-			apiError.Code = InvalidFriend
-			apiError.Message = apiError.String(apiError.Code)
-			c.JSON(http.StatusUnprocessableEntity, apiError)
-		default:
-			apiError.Code = SystemError
-			apiError.Message = apiError.String(apiError.Code)
-			fmt.Println(err)
-			c.JSON(http.StatusInternalServerError, apiError)
-		}
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
 		return
 	}
-
-	// ToDO: Return updated usr struct?
 }
 
 // RemoveFriend adds someone to the user's friendlist
@@ -109,19 +96,8 @@ func RemoveFriend(c *gin.Context) {
 
 	err = env.userModel.RemoveFriend(userID, data.FriendID)
 	if err != nil {
-		switch err {
-		case models.ErrInvalidFriend:
-			apiError.Code = InvalidFriend
-			apiError.Message = apiError.String(apiError.Code)
-			c.JSON(http.StatusUnprocessableEntity, apiError)
-		default:
-			apiError.Code = SystemError
-			apiError.Message = apiError.String(apiError.Code)
-			// fmt.Println(err)
-			c.JSON(http.StatusInternalServerError, apiError)
-		}
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
 		return
 	}
-
-	// ToDO: Return updated usr struct?
 }

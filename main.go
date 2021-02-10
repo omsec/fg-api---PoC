@@ -44,6 +44,7 @@ func handleRequests() {
 	// user-mgmt
 	router.GET("users/:id", authentication.TokenAuthMiddleware(), controllers.GetUser)
 	router.POST("/user/changePass", authentication.TokenAuthMiddleware(), controllers.ChangePassword)
+	router.POST("/user/verifyPass", authentication.TokenAuthMiddleware(), controllers.VerifyPassword)
 	router.POST("/user/addFriend", authentication.TokenAuthMiddleware(), controllers.AddFriend)
 	router.POST("/user/removeFriend", authentication.TokenAuthMiddleware(), controllers.RemoveFriend)
 

@@ -30,6 +30,7 @@ type User struct {
 	// ToDo: Folloers evtl. in anderer Collection, wenn Array zu gross wird
 	// Following []UserRef
 	// Followers []UserRef
+	// ToDo: []LastPasswords - check for 90 days or 10 entries
 }
 
 // Credentials is used for programmatic control

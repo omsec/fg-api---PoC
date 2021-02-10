@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"fmt"
 	"forza-garage/authentication"
 	"forza-garage/models"
 	"net/http"
@@ -36,17 +35,8 @@ func AddCourse(c *gin.Context) {
 	// validate request
 	course, err := env.courseModel.Validate(data)
 	if err != nil {
-		switch err {
-		case models.ErrCourseNameMissing:
-			apiError.Code = CourseNameMissing
-			apiError.Message = apiError.String(apiError.Code)
-			c.JSON(http.StatusUnprocessableEntity, apiError)
-		default:
-			apiError.Code = SystemError
-			apiError.Message = apiError.String(apiError.Code)
-			// fmt.Println(err)
-			c.JSON(http.StatusInternalServerError, apiError)
-		}
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
 		return
 	}
 
@@ -54,30 +44,15 @@ func AddCourse(c *gin.Context) {
 	course.MetaInfo.CreatedID = models.ObjectID(userID)
 	course.MetaInfo.CreatedName, err = env.userModel.GetUserName(userID)
 	if err != nil {
-		switch err {
-		case models.ErrInvalidUser:
-			apiError.Code = InvalidRequest
-			apiError.Message = apiError.String(apiError.Code)
-			c.JSON(http.StatusUnprocessableEntity, apiError)
-		default:
-			apiError.Code = SystemError
-			apiError.Message = apiError.String(apiError.Code)
-			// fmt.Println(err)
-			c.JSON(http.StatusInternalServerError, apiError)
-		}
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
 		return
 	}
 
 	id, err := env.courseModel.CreateCourse(course)
 	if err != nil {
-		switch err {
-		case models.ErrForzaSharingCodeTaken:
-			apiError.Code = ForzaShareTaken
-			apiError.Message = apiError.String(apiError.Code)
-			c.JSON(http.StatusUnprocessableEntity, apiError)
-		default:
-			c.JSON(http.StatusInternalServerError, err.Error())
-		}
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
 		return
 	}
 
@@ -87,8 +62,6 @@ func AddCourse(c *gin.Context) {
 // ListCourses returns a list of racing tracks
 // format => http://localhost:3000/courses?game=fh4&search=roger
 func ListCourses(c *gin.Context) {
-
-	var apiError ErrorResponse
 
 	// Error maybe ignored here
 	// Service is public, however members receive more results (and do need to wait for another request)
@@ -122,10 +95,8 @@ func ListCourses(c *gin.Context) {
 			return
 		}
 		// technical errors
-		apiError.Code = SystemError
-		apiError.Message = apiError.String(apiError.Code)
-		fmt.Println(err)
-		c.JSON(http.StatusInternalServerError, apiError)
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
 		return
 	}
 
@@ -134,8 +105,6 @@ func ListCourses(c *gin.Context) {
 
 // GetCourse returns the specified track
 func GetCourse(c *gin.Context) {
-
-	var apiError ErrorResponse
 
 	var (
 		err  error
@@ -159,25 +128,12 @@ func GetCourse(c *gin.Context) {
 	data, err = env.courseModel.GetCourse(id, credentials)
 	if err != nil {
 		switch err {
+		// record not found is not an error to the client here
 		case models.ErrNoData:
 			c.Status(http.StatusNoContent)
-		case models.ErrGuest:
-			apiError.Code = PermissionGuest
-			apiError.Message = apiError.String(apiError.Code)
-			c.JSON(http.StatusUnprocessableEntity, apiError)
-		case models.ErrNotFriend:
-			apiError.Code = PermissionNotShared
-			apiError.Message = apiError.String(apiError.Code)
-			c.JSON(http.StatusUnprocessableEntity, apiError)
-		case models.ErrPrivate:
-			apiError.Code = PermissionPrivate
-			apiError.Message = apiError.String(apiError.Code)
-			c.JSON(http.StatusUnprocessableEntity, apiError)
 		default:
-			apiError.Code = SystemError
-			apiError.Message = apiError.String(apiError.Code)
-			fmt.Println(err)
-			c.JSON(http.StatusUnprocessableEntity, apiError)
+			status, apiError := HandleError(err)
+			c.JSON(status, apiError)
 		}
 		return
 	}
@@ -237,14 +193,8 @@ func UpdateCourse(c *gin.Context) {
 
 	err = env.courseModel.UpdateCourse(course, credentials)
 	if err != nil {
-		switch err {
-		case models.ErrForzaSharingCodeTaken:
-			apiError.Code = ForzaShareTaken
-			apiError.Message = apiError.String(apiError.Code)
-			c.JSON(http.StatusUnprocessableEntity, apiError)
-		default:
-			c.JSON(http.StatusInternalServerError, err.Error())
-		}
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
 		return
 	}
 
@@ -284,10 +234,8 @@ func ExistsForzaShare(c *gin.Context) {
 
 	exists, err := env.courseModel.ForzaSharingExists(data.ForzaSharing)
 	if err != nil {
-		apiError.Code = SystemError
-		apiError.Message = apiError.String(apiError.Code)
-		// fmt.Println(err)
-		c.JSON(http.StatusInternalServerError, apiError)
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
 		return
 	}
 

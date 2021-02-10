@@ -390,7 +390,7 @@ func (m CourseModel) UpdateCourse(course *Course, credentials *Credentials) erro
 		return helpers.WrapError(err, helpers.FuncName())
 	}
 
-	if (data.CreatedID != credentials.UserID) || (credentials.RoleCode < lookups.UserRoleAdmin) {
+	if (data.CreatedID != credentials.UserID) && (credentials.RoleCode < lookups.UserRoleAdmin) {
 		return ErrDenied
 	}
 

@@ -33,6 +33,5 @@ var (
 var (
 	ErrForzaSharingCodeMissing = errors.New("sharing code is required")
 	ErrCourseNameMissing       = errors.New("course name is required")
-	ErrSeriesMissing           = errors.New("series is required")
 	ErrForzaSharingCodeTaken   = errors.New("forza sharing code already used")
 )
