@@ -17,14 +17,14 @@ import (
 // User is the "interface" used for client communication
 type User struct {
 	ID           primitive.ObjectID `json:"id" bson:"_id"`
-	LoginName    string             `json:"loginName" bson:"loginName"`
-	Password     string             `json:"password" bson:"password"` // hash value
+	LoginName    string             `json:"loginName" bson:"loginName"` // unique
+	Password     string             `json:"password" bson:"password"`   // hash value
 	RoleCode     int32              `json:"roleCode" bson:"roleCD"`
 	RoleText     string             `json:"roleText" bson:"-"`
 	LanguageCode int32              `json:"languageCode" bson:"languageCD" header:"Language"`
 	LanguageText string             `json:"languageText" bson:"-"`
-	EMailAddress string             `json:"eMail" bson:"eMail"`
-	XBoxTag      string             `json:"XBoxTag" bson:"XBoxTag"`
+	EMailAddress string             `json:"eMail" bson:"eMail"`     // unique
+	XBoxTag      string             `json:"XBoxTag" bson:"XBoxTag"` // unique
 	LastSeenTS   time.Time          `json:"lastSeenTS" bson:"lastSeenTS,omitempty"`
 	Friends      []UserRef          `json:"friends" bson:"friends,omitempty"`
 	// ToDo: Folloers evtl. in anderer Collection, wenn Array zu gross wird
@@ -79,6 +79,7 @@ func (m UserModel) CreateUser(user User) (string, error) {
 	// ToDo: entfernen => PK in DB machen
 	// braucht Hilfs-Proc (package DB) um die MSG zu parsen key: ....
 	// "multiple write errors: [{write errors: [{E11000 duplicate key error collection: forzaGarage.users index: loginName_1 dup key: { loginName: \"roger\" }}]}, {<nil>}]"
+	// https://stackoverflow.com/questions/56916969/with-mongodb-go-driver-how-do-i-get-the-inner-exceptions
 	b, err := userExists(m.Collection, user.LoginName)
 	if b || err != nil {
 		return "", ErrUserNameNotAvailable

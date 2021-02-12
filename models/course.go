@@ -21,7 +21,7 @@ import (
 // Course is the "interface" used for client communication
 type Course struct {
 	ID             primitive.ObjectID `json:"id" bson:"_id"`
-	MetaInfo       Header             `json:"metaInfo" bson:"metaInfo"`
+	MetaInfo       Header             `json:"metaInfo" bson:"metaInfo"` // non-ptr = always present
 	VisibilityCode int32              `json:"visibilityCode" bson:"visibilityCD"`
 	VisibilityText string             `json:"visibilityText" bson:"-"`
 	GameCode       int32              `json:"gameCode" bson:"gameCD"`
@@ -32,28 +32,35 @@ type Course struct {
 	Name           string             `json:"name" bson:"name"` // same name as CMPs to enables over-all searches
 	SeriesCode     int32              `json:"seriesCode" bson:"seriesCD"`
 	SeriesText     string             `json:"seriesText" bson:"-"`
-	CarClassCode   int32              `json:"carClassCode" bson:"carClassCD"`
-	CarClassText   string             `json:"carClassText" bson:"-"`
+	CarClassesCode []int32            `json:"carClassesCode" bson:"carClassesCD"`
+	CarClassesText []string           `json:"carClassesText" bson:"-"`
+	Route          *CourseRef         `json:"route" bson:"route,omitempty"` // standard route which a custom route is based on
+}
+
+// CourseRef is used as a reference
+type CourseRef struct {
+	ID   primitive.ObjectID `json:"id" bson:"_id"`
+	Name string             `json:"name" bson:"name"`
 }
 
 // CourseListItem is the reduced/simplified model used for listings
 type CourseListItem struct {
-	ID           primitive.ObjectID `json:"id"`
-	CreatedTS    time.Time          `json:"createdTS"`
-	CreatedID    primitive.ObjectID `json:"createdID"`
-	CreatedName  string             `json:"createdName"`
-	Rating       float32            `json:"rating"`
-	GameCode     int32              `json:"gameCode"`
-	GameText     string             `json:"gameText"`
-	Name         string             `json:"name"`
-	ForzaSharing int32              `json:"forzaSharing"`
-	SeriesCode   int32              `json:"seriesCode"`
-	SeriesText   string             `json:"seriesText"`
-	CarClassCode int32              `json:"carClassCode"`
-	CarClassText string             `json:"carClassText"`
+	ID             primitive.ObjectID `json:"id"`
+	CreatedTS      time.Time          `json:"createdTS"`
+	CreatedID      primitive.ObjectID `json:"createdID"`
+	CreatedName    string             `json:"createdName"`
+	Rating         float32            `json:"rating"`
+	GameCode       int32              `json:"gameCode"`
+	GameText       string             `json:"gameText"`
+	Name           string             `json:"name"`
+	ForzaSharing   int32              `json:"forzaSharing"`
+	SeriesCode     int32              `json:"seriesCode"`
+	SeriesText     string             `json:"seriesText"`
+	CarClassesCode []int32            `json:"carClassesCode"`
+	CarClassesText []string           `json:"carClassesText"`
 }
 
-// CourseSearch is passed as the search params
+// CourseSearch is passed as the search params // ToDO: evt. CourseSearchParams nennen, searchMode integrieren
 type CourseSearch struct {
 	// ToDo: UserID (ObjectID) in Credentials verschieben (auch für get etc. benutzen)
 	GameText    string // client should pass readable text in URL rather than codes
@@ -161,7 +168,7 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 		{Key: "name", Value: 1},
 		{Key: "forzaSharing", Value: 1},
 		{Key: "seriesCD", Value: 1},
-		{Key: "carClassCD", Value: 1},
+		{Key: "carClassesCD", Value: 1},
 	}
 
 	sort := bson.D{
@@ -315,8 +322,12 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 		course.ForzaSharing = v.ForzaSharing
 		course.SeriesCode = v.SeriesCode
 		course.SeriesText = database.GetLookupText(lookups.LookupType(lookups.LTseries), v.SeriesCode)
-		course.CarClassCode = v.CarClassCode
-		course.CarClassText = database.GetLookupText(lookups.LookupType(lookups.LTcarClass), v.CarClassCode)
+		course.CarClassesCode = v.CarClassesCode
+		//course.CarClassText = database.GetLookupText(lookups.LookupType(lookups.LTcarClass), v.CarClassCode)
+		course.CarClassesText = make([]string, len(v.CarClassesCode))
+		for i := range v.CarClassesCode {
+			course.CarClassesText[i] = database.GetLookupText(lookups.LookupType(lookups.LTcarClass), v.CarClassesCode[i])
+		}
 
 		courseList = append(courseList, course)
 	}
@@ -431,7 +442,7 @@ func (m CourseModel) UpdateCourse(course *Course, credentials *Credentials) erro
 		{Key: "$set", Value: bson.D{{Key: "forzaSharing", Value: course.ForzaSharing}}},
 		{Key: "$set", Value: bson.D{{Key: "name", Value: course.Name}}},
 		{Key: "$set", Value: bson.D{{Key: "seriesCD", Value: course.SeriesCode}}},
-		{Key: "$set", Value: bson.D{{Key: "carClassCD", Value: course.CarClassCode}}},
+		{Key: "$set", Value: bson.D{{Key: "carClassesCD", Value: course.CarClassesCode}}},
 	}
 
 	result, err := m.Collection.UpdateOne(ctx, filter, fields)
@@ -455,7 +466,11 @@ func (m CourseModel) addLookups(course *Course) *Course {
 	course.GameText = database.GetLookupText(lookups.LookupType(lookups.LTgame), course.GameCode)
 	course.TypeText = database.GetLookupText(lookups.LookupType(lookups.LTcourseType), course.TypeCode)
 	course.SeriesText = database.GetLookupText(lookups.LookupType(lookups.LTseries), course.SeriesCode)
-	course.CarClassText = database.GetLookupText(lookups.LookupType(lookups.LTcarClass), course.CarClassCode)
+	// course.CarClassText = database.GetLookupText(lookups.LookupType(lookups.LTcarClass), course.CarClassCode)
+	course.CarClassesText = make([]string, len(course.CarClassesCode))
+	for i := range course.CarClassesCode {
+		course.CarClassesText[i] = database.GetLookupText(lookups.LookupType(lookups.LTcarClass), course.CarClassesCode[i])
+	}
 
 	return course
 }
