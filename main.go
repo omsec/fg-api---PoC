@@ -45,8 +45,15 @@ func handleRequests() {
 	router.GET("users/:id", authentication.TokenAuthMiddleware(), controllers.GetUser)
 	router.POST("/user/changePass", authentication.TokenAuthMiddleware(), controllers.ChangePassword)
 	router.POST("/user/verifyPass", authentication.TokenAuthMiddleware(), controllers.VerifyPassword)
+
+	router.GET("user/getFriends/:id", authentication.TokenAuthMiddleware(), controllers.GetFriends)
 	router.POST("/user/addFriend", authentication.TokenAuthMiddleware(), controllers.AddFriend)
 	router.POST("/user/removeFriend", authentication.TokenAuthMiddleware(), controllers.RemoveFriend)
+
+	router.GET("user/getFollowings/:id", authentication.TokenAuthMiddleware(), controllers.GetFollowings)
+	router.POST("/user/follow", authentication.TokenAuthMiddleware(), controllers.FollowUser)
+
+	router.GET("user/getFollowers/:id", authentication.TokenAuthMiddleware(), controllers.GetFollowers)
 
 	// course
 	// GET hat keinen BODY (Go/Gin & Postman unterstützen das zwar, Angular nicht) - deshalb Parameter

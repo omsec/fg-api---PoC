@@ -35,6 +35,10 @@ type Course struct {
 	CarClassesCode []int32            `json:"carClassesCode" bson:"carClassesCD"`
 	CarClassesText []string           `json:"carClassesText" bson:"-"`
 	Route          *CourseRef         `json:"route" bson:"route,omitempty"` // standard route which a custom route is based on
+	// omitempty merkt selber, ob das feld im json vorhanden war :-) ohne wird def-wert des typs gespeichert
+	// von angular käme dann wohl null von einem leeren control
+	//OptionalNum    int32              `json:"optionalNum" bson:"optionalNum,omitempty"`
+	//OptionalStr    string             `json:"optionalStr" bson:"optionalStr,omitempty"`
 }
 
 // CourseRef is used as a reference
@@ -62,7 +66,7 @@ type CourseListItem struct {
 
 // CourseSearch is passed as the search params // ToDO: evt. CourseSearchParams nennen, searchMode integrieren
 type CourseSearch struct {
-	// ToDo: UserID (ObjectID) in Credentials verschieben (auch für get etc. benutzen)
+	// ToDO: SearchMode
 	GameText    string // client should pass readable text in URL rather than codes
 	SearchTerm  string
 	Credentials *Credentials
@@ -243,7 +247,7 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 			// check visibility
 			friendIDs := make([]primitive.ObjectID, len(searchSpecs.Credentials.Friends))
 			for i, friend := range searchSpecs.Credentials.Friends {
-				friendIDs[i] = friend.ID
+				friendIDs[i] = friend.ReferenceID
 			}
 
 			if searchSpecs.SearchTerm == "" {

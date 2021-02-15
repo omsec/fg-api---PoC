@@ -2,10 +2,10 @@ package models
 
 import (
 	"context"
-	"fmt"
 	"forza-garage/database"
 	"forza-garage/helpers"
 	"forza-garage/lookups"
+	"sort"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -26,10 +26,9 @@ type User struct {
 	EMailAddress string             `json:"eMail" bson:"eMail"`     // unique
 	XBoxTag      string             `json:"XBoxTag" bson:"XBoxTag"` // unique
 	LastSeenTS   time.Time          `json:"lastSeenTS" bson:"lastSeenTS,omitempty"`
-	Friends      []UserRef          `json:"friends" bson:"friends,omitempty"`
-	// ToDo: Folloers evtl. in anderer Collection, wenn Array zu gross wird
-	// Following []UserRef
-	// Followers []UserRef
+	Friends      []UserRef          `json:"friends" bson:"-"`   // loaded from diff. collection
+	Following    []UserRef          `json:"following" bson:"-"` // loaded from diff. collection
+	Followers    []UserRef          `json:"followers" bson:"-"` // loaded from diff. collection
 	// ToDo: []LastPasswords - check for 90 days or 10 entries
 }
 
@@ -43,16 +42,24 @@ type Credentials struct {
 	Friends      []UserRef
 }
 
-// UserRef is a simple reference to user infromation, eg. uses in the friendlist
+// UserRef is a simple reference to something (another user as a friend or follower) or an object as an "observable"
 type UserRef struct {
-	ID        primitive.ObjectID `json:"id" bson:"_id"`
-	LoginName string             `json:"loginName" bson:"loginName"`
+	UserID        primitive.ObjectID `json:"userID" bson:"userID"` // referencing user
+	UserName      string             `json:"userName" bson:"userName"`
+	ReferenceID   primitive.ObjectID `json:"referenceID" bson:"refID"`     // referenced ID
+	ReferenceName string             `json:"referenceName" bson:"refName"` // name of referenced user/object
+	ReferenceType string             `json:"referenceType" bson:"refType"` // user, course, championship etc.
+	// eigentlich hier unnötig, aber einfacher
+	RelationType string `json:"-" bson:"relType"` // friend, following/observing, follower
 }
 
 // UserModel provides the logic to the interface and access to the database
+// (assigned in initialization of the controller)
 type UserModel struct {
-	Client     *mongo.Client
+	Client *mongo.Client
+	// could be a map - overkill ;-)
 	Collection *mongo.Collection
+	Social     *mongo.Collection
 }
 
 // UserExists checks if a User Name is available - used in client for in-type error checking
@@ -129,6 +136,8 @@ func (m UserModel) GetUserByName(userName string) (*User, error) {
 		// pass any other error
 		return nil, helpers.WrapError(err, helpers.FuncName())
 	}
+
+	// ToDO: überlegen, ob hier die Friends etc. gelesen werden sollen - denke nicht nötig (getcredeitnaisl für prüfungen, sonst getProfile...?)
 
 	// add look-up texts
 	addLookups(&user)
@@ -210,6 +219,8 @@ func (m UserModel) CheckPassword(givenPassword string, userInfo User) bool {
 }
 
 // SetLastSeen saves timestamp of last log-in
+// Rolling Window
+// https://stackoverflow.com/questions/29932723/how-to-limit-an-array-size-in-mongodb
 // ToDo: add IP-Address & record history (collection analytics)
 // ToDO: auch in refresh rufen
 func (m UserModel) SetLastSeen(userID primitive.ObjectID) {
@@ -276,7 +287,6 @@ func (m UserModel) GetCredentials(UserID string) (*Credentials, error) {
 			{Key: "loginName", Value: 1},
 			{Key: "roleCD", Value: 1}, // {Key: "metaInfo.rating", Value: 1}, -- so könnte die nested struct eingeschränkt werden
 			{Key: "languageCD", Value: 1},
-			{Key: "friends", Value: 1},
 		}
 
 		opts := options.FindOne().SetProjection(fields)
@@ -293,32 +303,64 @@ func (m UserModel) GetCredentials(UserID string) (*Credentials, error) {
 			return nil, helpers.WrapError(err, helpers.FuncName())
 		}
 		credentials.UserID = id
+
+		// friendlist ist referenced from its own collection, add it
+		credentials.Friends, err = m.GetFriends(UserID)
+		if err != nil {
+			// "no data/no friends" is not an error, other errors are already wrapped
+			if err != ErrNoData {
+				return nil, err
+			}
+		}
 	}
 
 	return &credentials, nil
 }
 
+// GetFriends lists all friends of a user
+func (m UserModel) GetFriends(userID string) ([]UserRef, error) {
+	// cal private proc
+
+	return m.getReferences(userID, "friend")
+}
+
+// GetFollowings lists all users someone (the userID) is following
+func (m UserModel) GetFollowings(userID string) ([]UserRef, error) {
+	// cal private proc
+
+	return m.getReferences(userID, "following")
+}
+
+// GetFollowers lists all users who are following someone (the userID)
+func (m UserModel) GetFollowers(userID string) ([]UserRef, error) {
+	// cal private proc
+
+	return m.getReferences(userID, "follower")
+}
+
 // AddFriend adds another user to the friendlist
-func (m UserModel) AddFriend(targetUserID string, friendUserID string) error {
+func (m UserModel) AddFriend(userID string, friendUserID string) error {
+	// ToDO: Mehrere auf einmal unterstüzen?
 
-	// ToDo:
-	// auch die gegenrichtung erstellen (add target to friend)
-
-	// ToDO: Prüfung entfernen bei mehreren; im Loop einfach ignorieren ohne FEhler
-	// überhaupt nötig? hängt vom gui ab
-	if targetUserID == friendUserID {
+	if userID == friendUserID {
 		return ErrInvalidFriend
 	}
 
 	// objectID required for update
-	targetID, err := primitive.ObjectIDFromHex(targetUserID)
+	userOID, err := primitive.ObjectIDFromHex(userID)
 	if err != nil {
 		return ErrInvalidUser
 	}
 
-	friendID, err := primitive.ObjectIDFromHex(friendUserID)
+	friendOID, err := primitive.ObjectIDFromHex(friendUserID)
 	if err != nil {
 		return ErrInvalidUser
+	}
+
+	// provisorisch
+	userInfo, err := m.GetCredentials(userID)
+	if err != nil {
+		return err
 	}
 
 	friendInfo, err := m.GetCredentials(friendUserID)
@@ -326,19 +368,20 @@ func (m UserModel) AddFriend(targetUserID string, friendUserID string) error {
 		return err
 	}
 
-	friend := UserRef{
-		ID:        friendID,
-		LoginName: friendInfo.LoginName}
-
-	filter := bson.D{{Key: "_id", Value: targetID}}
-	// $addToSet silently checks for duplicates - $push does not
-	update := bson.D{{Key: "$addToSet", Value: bson.D{{Key: "friends", Value: friend}}}}
+	// ein eintrag ist genug, da diese beziehungen nicht gerichtet (wie bspw. Vormund/Mündel) sind
+	// somit entfallen teure Transaktionen
+	data := UserRef{
+		UserID:        userOID,
+		UserName:      userInfo.LoginName,
+		ReferenceID:   friendOID,
+		ReferenceName: friendInfo.LoginName,
+		ReferenceType: "user",
+		RelationType:  "friend"}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel() // nach 10 Sekunden abbrechen
 
-	// not interessted in result (eg. no of changes)
-	_, err = m.Collection.UpdateOne(ctx, filter, update)
+	_, err = m.Social.InsertOne(ctx, data)
 	if err != nil {
 		return helpers.WrapError(err, helpers.FuncName())
 	}
@@ -346,51 +389,193 @@ func (m UserModel) AddFriend(targetUserID string, friendUserID string) error {
 	return nil
 }
 
-// RemoveFriend adds another user to the friendlist
-func (m UserModel) RemoveFriend(targetUserID string, friendUserID string) error {
+// RemoveFriend deletes a user from the friendlist
+func (m UserModel) RemoveFriend(userID string, friendUserID string) error {
+	return nil
+}
 
-	// auch die gegenrichtung löschen (remove target from friend)
+// FollowUser "registers" a user to follow another user
+func (m UserModel) FollowUser(userID string, followUserID string) error {
+	// ToDO: Mehrere auf einmal unterstüzen?
 
-	// ToDO: Prüfung entfernen bei mehreren; im Loop einfach ignorieren ohne FEhler
-	// überhaupt nötig? hängt vom gui ab
-	if targetUserID == friendUserID {
+	if userID == followUserID {
 		return ErrInvalidFriend
 	}
 
 	// objectID required for update
-	targetID, err := primitive.ObjectIDFromHex(targetUserID)
+	userOID, err := primitive.ObjectIDFromHex(userID)
 	if err != nil {
 		return ErrInvalidUser
 	}
 
-	friendID, err := primitive.ObjectIDFromHex(friendUserID)
+	followOID, err := primitive.ObjectIDFromHex(followUserID)
 	if err != nil {
 		return ErrInvalidUser
 	}
 
-	filter := bson.D{{Key: "_id", Value: targetID}}
-	// Formatierung ausprobieren was lesbarer scheint - mit Zeilenumbruch braucht's Kommas...
-	// update := bson.D{{Key: "$pull", Value: bson.D{{Key: "friends", Value: bson.D{{Key: "_id", Value: friendID}}}}}}
-	update := bson.D{
-		{Key: "$pull", Value: bson.D{
-			{Key: "friends", Value: bson.D{
-				{Key: "_id", Value: friendID}},
-			}},
-		}}
+	// provisorisch
+	userInfo, err := m.GetCredentials(userID)
+	if err != nil {
+		return err
+	}
+
+	followInfo, err := m.GetCredentials(followUserID)
+	if err != nil {
+		return err
+	}
+
+	// ein eintrag ist genug, da diese beziehungen nicht gerichtet (wie bspw. Vormund/Mündel) sind
+	// somit entfallen teure Transaktionen
+	data := UserRef{
+		UserID:        userOID,
+		UserName:      userInfo.LoginName,
+		ReferenceID:   followOID,
+		ReferenceName: followInfo.LoginName,
+		ReferenceType: "user",
+		RelationType:  "following"}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel() // nach 10 Sekunden abbrechen
 
-	// not interessted in result (eg. no of changes)
-	res, err := m.Collection.UpdateOne(ctx, filter, update)
+	_, err = m.Social.InsertOne(ctx, data)
 	if err != nil {
-		// fmt.Println(err)
 		return helpers.WrapError(err, helpers.FuncName())
 	}
 
-	fmt.Println(res)
-
 	return nil
+}
+
+// private proc to read relations/referenced documents, such as friends
+func (m UserModel) getReferences(userID string, relationType string) ([]UserRef, error) {
+	// TODO: Validate inparams
+
+	userOID, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		return nil, ErrInvalidUser
+	}
+
+	fields := bson.M{
+		"_id":      0,
+		"userID":   1,
+		"userName": 1,
+		"refID":    1,
+		"refName":  1,
+	}
+
+	// actually not required for friendlist, due do post-processing (sort on slice)
+	dbSort := bson.M{
+		"userName": 1,
+	}
+
+	// ToDo: Limit sinnvoll?
+	opts := options.Find().SetProjection(fields).SetLimit(20).SetSort(dbSort)
+
+	// different query depending on relation type
+	var filter bson.M
+
+	switch relationType {
+	case "friend":
+		filter = bson.M{
+			"relType": relationType,
+			"$or": bson.A{
+				bson.M{"userID": userOID},
+				bson.M{"refID": userOID},
+			},
+		}
+	case "following":
+		// wem folge ich? abfrage auf db.userID = userID
+		filter = bson.M{
+			"relType": relationType,
+			"userID":  userOID,
+		}
+	case "follower":
+		// wer folgt mir? abfrage auf refID = userID
+		filter = bson.M{
+			"relType": "following", // same type/verb, different context
+			"refID":   userOID,
+		}
+	case "observing":
+		// welche rat/cmp etc. beobachte ich?
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel() // nach 10 Sekunden abbrechen
+
+	cursor, err := m.Social.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, helpers.WrapError(err, helpers.FuncName())
+	}
+
+	// receive results
+	var results []UserRef
+
+	err = cursor.All(ctx, &results)
+	if err != nil {
+		return nil, helpers.WrapError(err, helpers.FuncName())
+	}
+
+	// check for empty result set (no error raised by find)
+	if results == nil {
+		return nil, ErrNoData
+	}
+
+	// final list
+	var reference UserRef
+	var references []UserRef
+	// storing 2 docs and use a trx makes it easier, but takes more disk space (=pay!)
+	// if userID = res.userID -> res.refID
+	// if userID = res.refID -> res.userID
+
+	if relationType == "friend" {
+		for _, r := range results {
+			reference.UserID = userOID
+			if r.UserID == userOID {
+				reference.UserName = r.UserName
+				reference.ReferenceID = r.ReferenceID
+				reference.ReferenceName = r.ReferenceName
+			} else {
+				reference.UserName = r.ReferenceName
+				reference.ReferenceID = r.UserID
+				reference.ReferenceName = r.UserName
+			}
+			reference.ReferenceType = "user"
+			reference.ReferenceType = relationType
+
+			references = append(references, reference)
+		}
+		// https://zetcode.com/golang/sort/
+		sort.Slice(references, func(i, j int) bool {
+			return references[i].ReferenceName < references[j].ReferenceName
+		})
+	}
+
+	if relationType == "following" {
+		for _, r := range results {
+			reference.UserID = r.UserID
+			reference.UserName = r.UserName
+			reference.ReferenceID = r.ReferenceID
+			reference.ReferenceName = r.ReferenceName
+			reference.ReferenceType = "user"
+			reference.RelationType = relationType
+
+			references = append(references, reference)
+		}
+	}
+
+	if relationType == "follower" {
+		for _, r := range results {
+			reference.UserID = r.ReferenceID
+			reference.UserName = r.ReferenceName
+			reference.ReferenceID = r.UserID
+			reference.ReferenceName = r.UserName
+			reference.ReferenceType = "user"
+			reference.RelationType = relationType
+
+			references = append(references, reference)
+		}
+	}
+
+	return references, nil
 }
 
 // public "static" methods
@@ -398,7 +583,7 @@ func (m UserModel) RemoveFriend(targetUserID string, friendUserID string) error 
 // UserReferenced scans a slice for a given item
 func UserReferenced(slice []UserRef, val primitive.ObjectID) bool {
 	for _, item := range slice {
-		if item.ID == val {
+		if item.UserID == val {
 			return true
 		}
 	}

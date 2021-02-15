@@ -20,6 +20,7 @@ func newEnv(client *mongo.Client) *Env {
 
 	env.userModel.Client = client
 	env.userModel.Collection = client.Database(os.Getenv("DB_NAME")).Collection("users") // ToDO: Const
+	env.userModel.Social = client.Database(os.Getenv("DB_NAME")).Collection("social")    // ToDO: Const
 
 	env.courseModel.Client = client
 	env.courseModel.Collection = client.Database(os.Getenv("DB_NAME")).Collection("racing") // ToDO: Const
