@@ -8,10 +8,60 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Test is what it seems :-)
+func Test(c *gin.Context) {
+
+	var apiError ErrorResponse
+
+	/*
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	*/
+
+	/*c.Status(http.StatusInternalServerError)
+	return*/
+
+	// userID (currentUser) could be used to check a user's permission to view another profile
+	/*
+		userID, err := authentication.Authenticate(c.Request)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, err.Error())
+			return
+		}
+	*/
+
+	// fehlender parameter muss nicht geprüft werden, sonst wär's eine andere route
+	user, err := env.userModel.GetUserByID("5feb2473b4d37f7f0285847a")
+	if err != nil {
+		apiError.Code = InvalidRequest
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	}
+
+	// don't send password hash
+	user.Password = ""
+
+	c.JSON(http.StatusOK, &user)
+}
+
 // GetUser sends a profile
 func GetUser(c *gin.Context) {
 
 	var apiError ErrorResponse
+
+	/*
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return*
+	*/
+	/*
+		c.Status(http.StatusInternalServerError)
+		return
+	*/
 
 	// userID (currentUser) could be used to check a user's permission to view another profile
 	/*

@@ -32,6 +32,8 @@ func handleRequests() {
 
 	// ToDo: Groups ?
 
+	router.GET("/test", controllers.Test)
+
 	router.GET("/lookups", controllers.ListLookups)
 
 	// auth-related
@@ -40,6 +42,8 @@ func handleRequests() {
 	router.POST("/refresh", controllers.Refresh)                                     // nicht prüfen, ob das at noch valide ist (keine Middleware)
 	router.POST("/user/exists", controllers.UserExists)
 	router.POST("/register", controllers.Register)
+
+	router.POST("/email/exists", controllers.EMailExists)
 
 	// user-mgmt
 	router.GET("users/:id", authentication.TokenAuthMiddleware(), controllers.GetUser)

@@ -63,6 +63,16 @@ func AddCourse(c *gin.Context) {
 // format => http://localhost:3000/courses?game=fh4&search=roger
 func ListCourses(c *gin.Context) {
 
+	/*var apiError ErrorResponse
+
+	apiError.Code = InvalidJSON
+	apiError.Message = apiError.String(apiError.Code)
+	c.JSON(http.StatusUnprocessableEntity, apiError)
+	return
+
+	/*c.Status(http.StatusInternalServerError)
+	return*/
+
 	// Error maybe ignored here
 	// Service is public, however members receive more results (and do need to wait for another request)
 	userID, _ := authentication.Authenticate(c.Request)
@@ -110,6 +120,14 @@ func GetCourse(c *gin.Context) {
 		err  error
 		data *models.Course
 	)
+
+	/*
+		var apiError ErrorResponse
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	*/
 
 	// no error checking because it's optional (public courses only)
 	userID, _ := authentication.Authenticate(c.Request)

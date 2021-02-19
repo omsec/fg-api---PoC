@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"fmt"
 	"forza-garage/authentication"
 	"forza-garage/helpers"
 	"forza-garage/models"
@@ -14,38 +15,91 @@ import (
 // UserExists maybe used to validate new accounts while typing into the form
 func UserExists(c *gin.Context) {
 
+	var apiError ErrorResponse
+
+	/*
+		// falls später die userID/Rolle geprüft werden soll
+		userID, err := authentication.Authenticate(c.Request)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, authentication.ErrUnauthorized.Error())
+			return
+		}
+	*/
+
+	// anonymous struct used to receive input (POST BODY)
 	data := struct {
 		LoginName string `json:"loginName" binding:"required"`
 	}{}
 
-	// short syntax (err "zentral" deklariert)
-	if err := c.BindJSON(&data); err != nil {
+	// use 'shouldBind' so we can send customized messages
+	if err := c.ShouldBindJSON(&data); err != nil {
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
 		return
 	}
 
-	// ToDo: More validation (trim ' ', len..?)
-	// Basic Validation/Cleansing in helper Proc?
-	data.LoginName = strings.TrimSpace(data.LoginName)
-	if len(data.LoginName) < 3 {
-		c.Status(http.StatusUnprocessableEntity)
+	exists := env.userModel.UserExists(data.LoginName)
+
+	// wrap response into an object
+	res := struct {
+		Exists bool `json:"exists"`
+	}{exists}
+
+	c.JSON(http.StatusOK, res)
+}
+
+// EMailExists maybe used to validate new accounts while typing into the form
+func EMailExists(c *gin.Context) {
+
+	var apiError ErrorResponse
+
+	/*
+		// falls später die userID/Rolle geprüft werden soll
+		userID, err := authentication.Authenticate(c.Request)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, authentication.ErrUnauthorized.Error())
+			return
+		}
+	*/
+
+	// anonymous struct used to receive input (POST BODY)
+	data := struct {
+		EMailAddress string `json:"eMailAddress" binding:"required"`
+	}{}
+
+	// use 'shouldBind' so we can send customized messages
+	if err := c.ShouldBindJSON(&data); err != nil {
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
 		return
 	}
 
-	b := env.userModel.UserExists(data.LoginName)
-	c.JSON(http.StatusOK, b)
+	exists := env.userModel.EMailAddressExists(data.EMailAddress)
+
+	// wrap response into an object
+	res := struct {
+		Exists bool `json:"exists"`
+	}{exists}
+
+	c.JSON(http.StatusOK, res)
 }
 
 // Register a new User
 func Register(c *gin.Context) {
 
 	var (
-		err  error
-		data models.User
+		err      error
+		data     models.User
+		apiError ErrorResponse
 	)
 
 	// short syntax (err "zentral" deklariert)
 	if err = c.ShouldBindJSON(&data); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, "invalid json")
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
 		return
 	}
 
@@ -61,22 +115,19 @@ func Register(c *gin.Context) {
 	// basically look for missing fields
 	// len(data.LoginName) < 3|len(data.Password < 8|len(data.EMailAddress == 0)
 	if len(data.LoginName) < 3 || len(data.Password) < 8 || len(data.EMailAddress) == 0 {
-		c.JSON(http.StatusUnprocessableEntity, "invalid data")
+		apiError.Code = InvalidRequest
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
 		return
 	}
 
 	// this also validates the user name, pwd etc.
 	ID, err := env.userModel.CreateUser(data)
 	if err != nil {
-		// ToDo: maybe check for an existing XBox-Tag :-)
-		switch err {
-		case models.ErrUserNameNotAvailable:
-			c.JSON(http.StatusUnprocessableEntity, err.Error())
-		case models.ErrEMailAddressTaken:
-			c.JSON(http.StatusUnprocessableEntity, err.Error())
-		default:
-			c.JSON(http.StatusInternalServerError, err.Error())
-		}
+		fmt.Println(err)
+		// ToDo: maybe check for an existing XBox-Tag and ask do u really want ... :-)
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
 		return
 	}
 
@@ -90,11 +141,14 @@ func Login(c *gin.Context) {
 		err       error
 		givenUser models.User
 		dbUser    *models.User
+		apiError  ErrorResponse
 	)
 
 	// use std struct
 	if err = c.ShouldBindJSON(&givenUser); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, "invalid json")
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
 		return
 	}
 
@@ -102,7 +156,9 @@ func Login(c *gin.Context) {
 	givenUser.LoginName = strings.TrimSpace(givenUser.LoginName)
 	givenUser.Password = strings.TrimSpace(givenUser.Password)
 	if len(givenUser.LoginName) == 0 || len(givenUser.Password) == 0 {
-		c.JSON(http.StatusForbidden, models.ErrInvalidUser.Error())
+		apiError.Code = InvalidRequest
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnauthorized, apiError)
 		return
 	}
 
@@ -111,25 +167,33 @@ func Login(c *gin.Context) {
 	if err != nil {
 		// user does not exist
 		if err == models.ErrInvalidUser {
-			c.JSON(http.StatusUnauthorized, err.Error())
+			// send custom error message
+			apiError.Code = InvalidLogin
+			apiError.Message = apiError.String(apiError.Code)
+			c.JSON(http.StatusUnauthorized, apiError)
 			return
 		}
 		// "real" error
-		c.JSON(http.StatusInternalServerError, nil) // make client say "please try again later"
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
 		return
 	}
 
 	// übergibt das unverschlüsselte PWD vom Login und das verschlüsselte aus der DB
 	granted := env.userModel.CheckPassword(givenUser.Password, *dbUser)
 	if !granted {
-		c.JSON(http.StatusForbidden, models.ErrInvalidUser.Error())
+		// send custom error message
+		apiError.Code = InvalidLogin
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnauthorized, apiError)
 		return
 	}
 
 	// create, register & save pair of AT/RT
 	err = authentication.CreateTokens(c, dbUser.ID.Hex())
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, err.Error())
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
 		return
 	}
 
@@ -175,23 +239,28 @@ func Logout(c *gin.Context) {
 // Refresh erzeugt ein neues AT wenn noch ein RT vorhanden ist - ToDo: evtl. ATs beschränken (wiederholte gültige Refreshes)
 func Refresh(c *gin.Context) {
 
+	var apiError ErrorResponse
+
 	au, err := authentication.ExtractTokenMetadata(authentication.RT, c.Request)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, err.Error()) // msg: "refresh token expired"
+		_, apiError = HandleError(err)
+		c.JSON(http.StatusUnauthorized, apiError)
 		return
 	}
 
 	// ist das RT noch gültig? (macht beim AT die Middleware)
 	err = authentication.TokenValid(authentication.RT, c.Request)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, err.Error())
+		_, apiError = HandleError(err)
+		c.JSON(http.StatusUnauthorized, apiError)
 		return
 	}
 
 	// userID für die Ausstellung eines neues Token Pair
 	userID, err := authentication.FetchAuth(au)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, err.Error())
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
 		return
 	}
 
@@ -201,7 +270,8 @@ func Refresh(c *gin.Context) {
 	if err != nil {
 		// user does not exist - erneute Prüfung eigentlich kaum nötig, kann aber noch mehr Sicherheit geben :-)
 		if err == models.ErrInvalidUser {
-			c.JSON(http.StatusUnauthorized, models.ErrInvalidUser.Error())
+			status, apiError := HandleError(err)
+			c.JSON(status, apiError)
 			return
 		}
 		// "real" error
@@ -214,16 +284,21 @@ func Refresh(c *gin.Context) {
 	// ein neuer Refresh wird dann aber nicht mehr gehen
 	deleted, err := authentication.DeleteAuths(authentication.RT, userID, au.TokenUUID)
 	if err != nil || deleted == 0 { //if anything goes wrong
-		c.JSON(http.StatusUnauthorized, authentication.ErrUnauthorized.Error())
+		apiError.Code = InvalidRequest
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
 		return
 	}
 
 	// create, register & save pair of AT/RT
 	err = authentication.CreateTokens(c, userID)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, err.Error())
+		_, apiError = HandleError(err)
+		c.JSON(http.StatusUnauthorized, apiError)
 		return
 	}
+
+	env.userModel.SetLastSeen(dbUser.ID)
 
 	// passwort nicht erneut zurücksenden
 	dbUser.Password = ""
@@ -239,6 +314,7 @@ func VerifyPassword(c *gin.Context) {
 		err       error
 		givenUser models.User
 		dbUser    *models.User
+		apiError  ErrorResponse
 	)
 
 	userID, err := authentication.Authenticate(c.Request)
@@ -249,7 +325,9 @@ func VerifyPassword(c *gin.Context) {
 
 	// use std struct (reduced fieldset)
 	if err = c.ShouldBindJSON(&givenUser); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, "invalid json")
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
 		return
 	}
 
@@ -257,7 +335,9 @@ func VerifyPassword(c *gin.Context) {
 	givenUser.LoginName = strings.TrimSpace(givenUser.LoginName)
 	givenUser.Password = strings.TrimSpace(givenUser.Password)
 	if len(givenUser.LoginName) == 0 || len(givenUser.Password) == 0 {
-		c.JSON(http.StatusForbidden, models.ErrInvalidUser.Error())
+		apiError.Code = InvalidRequest
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnauthorized, apiError)
 		return
 	}
 
@@ -275,13 +355,14 @@ func VerifyPassword(c *gin.Context) {
 			return
 		}
 		// technical error
-		c.JSON(http.StatusInternalServerError, nil) // make client say "please try again later"
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
 		return
 	}
 
 	// Passt der Benutzername zur ID im Token?
 	if givenUser.LoginName != dbUser.LoginName {
-		c.JSON(http.StatusOK, res)
+		c.JSON(http.StatusOK, res) // false (default)
 		return
 	}
 
@@ -295,11 +376,12 @@ func VerifyPassword(c *gin.Context) {
 func ChangePassword(c *gin.Context) {
 
 	var dbUser *models.User
+	var apiError ErrorResponse
 
 	// default auth-check
 	userID, err := authentication.Authenticate(c.Request)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, authentication.ErrUnauthorized.Error())
+		c.Status(http.StatusUnauthorized)
 		return
 	}
 
@@ -322,7 +404,9 @@ func ChangePassword(c *gin.Context) {
 
 	// look for empty fields (Gin does not trim)
 	if len(data.LoginName) == 0 || len(data.CurrentPWD) == 0 || len(data.NewPassword) < 8 {
-		c.Status(http.StatusUnprocessableEntity)
+		apiError.Code = InvalidRequest
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnauthorized, apiError)
 		return
 	}
 
@@ -331,31 +415,40 @@ func ChangePassword(c *gin.Context) {
 	if err != nil {
 		// user does not exist
 		if err == models.ErrInvalidUser {
-			c.JSON(http.StatusUnauthorized, authentication.ErrUnauthorized.Error()) // report auth error
+			// report auth error
+			apiError.Code = InvalidRequest
+			apiError.Message = apiError.String(apiError.Code)
+			c.JSON(http.StatusUnauthorized, apiError)
 			return
 		}
 		// "real" error
-		c.Status(http.StatusInternalServerError) // make client say "please try again later"
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
 		return
 	}
 
 	// as an extra-security measure, compare given user name with the one referenced in the cookie
 	if data.LoginName != dbUser.LoginName {
-		c.JSON(http.StatusForbidden, authentication.ErrUnauthorized.Error())
+		apiError.Code = InvalidRequest
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnauthorized, apiError)
 		return
 	}
 
 	// check the current password (again)
 	granted := env.userModel.CheckPassword(data.CurrentPWD, *dbUser)
 	if !granted {
-		c.JSON(http.StatusForbidden, authentication.ErrUnauthorized.Error())
+		apiError.Code = InvalidRequest
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnauthorized, apiError)
 		return
 	}
 
 	// ToDo: Validate new PWD (or include that in SetPWD)
 	err = env.userModel.SetPassword(dbUser.ID, data.NewPassword)
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, models.ErrInvalidPassword.Error())
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
 		return
 	}
 }

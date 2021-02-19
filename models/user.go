@@ -23,12 +23,12 @@ type User struct {
 	RoleText     string             `json:"roleText" bson:"-"`
 	LanguageCode int32              `json:"languageCode" bson:"languageCD" header:"Language"`
 	LanguageText string             `json:"languageText" bson:"-"`
-	EMailAddress string             `json:"eMail" bson:"eMail"`     // unique
-	XBoxTag      string             `json:"XBoxTag" bson:"XBoxTag"` // unique
-	LastSeenTS   time.Time          `json:"lastSeenTS" bson:"lastSeenTS,omitempty"`
-	Friends      []UserRef          `json:"friends" bson:"-"`   // loaded from diff. collection
-	Following    []UserRef          `json:"following" bson:"-"` // loaded from diff. collection
-	Followers    []UserRef          `json:"followers" bson:"-"` // loaded from diff. collection
+	EMailAddress string             `json:"eMail" bson:"eMail"`                 // unique
+	XBoxTag      string             `json:"XBoxTag" bson:"XBoxTag"`             // unique
+	LastSeenTS   []time.Time        `json:"lastSeen" bson:"lastSeen,omitempty"` // limited to 5 in DB-Query (setLastSeen)
+	Friends      []UserRef          `json:"friends" bson:"-"`                   // loaded from diff. collection
+	Following    []UserRef          `json:"following" bson:"-"`                 // loaded from diff. collection
+	Followers    []UserRef          `json:"followers" bson:"-"`                 // loaded from diff. collection
 	// ToDo: []LastPasswords - check for 90 days or 10 entries
 }
 
@@ -71,8 +71,8 @@ func (m UserModel) UserExists(userName string) bool {
 
 // EMailAddressExists checks if an eMail-Address is already assigned with any User Name
 // used in client for in-type error checking
-func (m UserModel) EMailAddressExists(emailAddress string) bool {
-	b, _ := eMailExists(m.Collection, emailAddress)
+func (m UserModel) EMailAddressExists(eMailAddress string) bool {
+	b, _ := eMailExists(m.Collection, eMailAddress)
 	return b
 }
 
@@ -106,7 +106,7 @@ func (m UserModel) CreateUser(user User) (string, error) {
 	user.ID = primitive.NewObjectID()
 	user.Password = pwdHash
 	user.RoleCode = lookups.UserRoleGuest
-	user.LastSeenTS = time.Now()
+	user.LastSeenTS = append(user.LastSeenTS, time.Now())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel() // nach 10 Sekunden abbrechen
@@ -222,12 +222,19 @@ func (m UserModel) CheckPassword(givenPassword string, userInfo User) bool {
 // Rolling Window
 // https://stackoverflow.com/questions/29932723/how-to-limit-an-array-size-in-mongodb
 // ToDo: add IP-Address & record history (collection analytics)
-// ToDO: auch in refresh rufen
 func (m UserModel) SetLastSeen(userID primitive.ObjectID) {
 	// no error is returned since this function is not essential
 
 	filter := bson.D{{Key: "_id", Value: userID}}
-	update := bson.D{{Key: "$set", Value: bson.D{{Key: "lastSeenTS", Value: time.Now()}}}}
+	//update := bson.D{{Key: "$set", Value: bson.D{{Key: "lastSeenTS", Value: time.Now()}}}}
+	update := bson.M{
+		"$push": bson.M{
+			"lastSeen": bson.M{
+				"$each":  bson.A{time.Now()},
+				"$slice": -5, // keep 5 last items in this array
+			},
+		},
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel() // nach 10 Sekunden abbrechen

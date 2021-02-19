@@ -95,6 +95,7 @@ const (
 	// client/api
 	InvalidJSON int32 = (10000 + iota)
 	InvalidRequest
+	InvalidLogin
 	// generic system
 	MultipleRecords
 	RecordChanged
@@ -122,6 +123,8 @@ func (er ErrorResponse) String(code int32) string {
 		msg = "Invalid JSON"
 	case InvalidRequest:
 		msg = "Invalid Request" // JSON was correct, data was not
+	case InvalidLogin:
+		msg = "invalid user name or password"
 	case MultipleRecords:
 		msg = "multiple records found"
 	case RecordChanged:
