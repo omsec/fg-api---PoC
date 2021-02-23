@@ -153,7 +153,7 @@ func (m UserModel) GetUserByID(ID string) (*User, error) {
 	// https://ildar.pro/golang-hints-create-mongodb-object-id-from-string/
 	id, err := primitive.ObjectIDFromHex(ID)
 	if err != nil {
-		return nil, ErrInvalidUser
+		return nil, ErrNoData // eigentlich ErrInvalidUser da keine gültige OID, jedoch std-meldung ausgeben
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -162,7 +162,7 @@ func (m UserModel) GetUserByID(ID string) (*User, error) {
 	err = m.Collection.FindOne(ctx, bson.M{"_id": id}).Decode(&user)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			return nil, ErrInvalidUser
+			return nil, ErrNoData
 		}
 		// pass any other error
 		return nil, helpers.WrapError(err, helpers.FuncName())

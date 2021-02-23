@@ -50,9 +50,8 @@ func Test(c *gin.Context) {
 // GetUser sends a profile
 func GetUser(c *gin.Context) {
 
-	var apiError ErrorResponse
-
 	/*
+		var apiError ErrorResponse
 		apiError.Code = InvalidJSON
 		apiError.Message = apiError.String(apiError.Code)
 		c.JSON(http.StatusUnprocessableEntity, apiError)
@@ -75,9 +74,14 @@ func GetUser(c *gin.Context) {
 	// fehlender parameter muss nicht geprüft werden, sonst wär's eine andere route
 	user, err := env.userModel.GetUserByID(c.Param("id"))
 	if err != nil {
-		apiError.Code = InvalidRequest
-		apiError.Message = apiError.String(apiError.Code)
-		c.JSON(http.StatusUnprocessableEntity, apiError)
+		// nothing found (not an error to the client)
+		if err == models.ErrNoData {
+			c.Status(http.StatusNoContent)
+			return
+		}
+		// technical errors
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
 		return
 	}
 
