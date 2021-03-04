@@ -15,9 +15,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// ToDo: UI on Forza Sharing Code
-// https://docs.mongodb.com/manual/core/index-unique/
-
 // Course is the "interface" used for client communication
 type Course struct {
 	ID             primitive.ObjectID `json:"id" bson:"_id"`
@@ -28,13 +25,14 @@ type Course struct {
 	GameText       string             `json:"gameText" bson:"-"`
 	TypeCode       int32              `json:"typeCode" bson:"courseTypeCD"` // identifies object type (for searches, $exists)
 	TypeText       string             `json:"typeText" bson:"-"`
-	ForzaSharing   int32              `json:"forzaSharing" bson:"forzaSharing"`
-	Name           string             `json:"name" bson:"name"` // same name as CMPs to enables over-all searches
+	ForzaSharing   int32              `json:"forzaSharing" bson:"forzaSharing"` // sparse index in collection
+	Name           string             `json:"name" bson:"name"`                 // same name as CMPs to enables over-all searches
 	SeriesCode     int32              `json:"seriesCode" bson:"seriesCD"`
 	SeriesText     string             `json:"seriesText" bson:"-"`
 	CarClassesCode []int32            `json:"carClassesCode" bson:"carClassesCD"`
 	CarClassesText []string           `json:"carClassesText" bson:"-"`
 	Route          *CourseRef         `json:"route" bson:"route,omitempty"` // standard route which a custom route is based on
+	// ToDo: circuit/sprint
 	// omitempty merkt selber, ob das feld im json vorhanden war :-) ohne wird def-wert des typs gespeichert
 	// von angular käme dann wohl null von einem leeren control
 	//OptionalNum    int32              `json:"optionalNum" bson:"optionalNum,omitempty"`
@@ -64,10 +62,20 @@ type CourseListItem struct {
 	CarClassesText []string           `json:"carClassesText"`
 }
 
-// CourseSearch is passed as the search params // ToDO: evt. CourseSearchParams nennen, searchMode integrieren
-type CourseSearch struct {
-	// ToDO: SearchMode
-	GameText    string // client should pass readable text in URL rather than codes
+const (
+	// CourseSearchModeAll includes both
+	CourseSearchModeAll = 0
+	// CourseSearchModeStandard returns standard routes (eg for look-ups/type-aheads)
+	CourseSearchModeStandard = 1
+	// CourseSearchModeCustom returns custom routes
+	CourseSearchModeCustom = 2
+)
+
+// CourseSearchParams is passed as the search params
+type CourseSearchParams struct {
+	SearchMode  int // std/custom routes; Flags not a code
+	GameCode    int32
+	SeriesCodes []int32
 	SearchTerm  string
 	Credentials *Credentials
 }
@@ -156,7 +164,7 @@ func (m CourseModel) CreateCourse(course *Course) (string, error) {
 }
 
 // SearchCourses lists or searches course (ohne Comments, aber mit Files/Tags)
-func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem, error) {
+func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams) ([]CourseListItem, error) {
 
 	// Verkleinerte/vereinfachte Struktur für Listen
 	// MongoDB muss eine passende Struktur erhalten um die Daten aufzunehmen (z. B. mit nested Arrays)
@@ -186,31 +194,48 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 	// https://docs.mongodb.com/manual/reference/operator/query/#query-selectors
 	// https://stackoverflow.com/questions/3305561/how-to-query-mongodb-with-like
 
-	gameCode, err := database.GetLookupValue(lookups.LookupType(lookups.LTgame), searchSpecs.GameText)
-	if err != nil {
-		gameCode = lookups.GameFH4
-	}
-
 	// perhaps, the searchTerm is a forza share code
 	i, _ := strconv.Atoi(searchSpecs.SearchTerm)
 
 	// construct a document containing the search parameters
 	filter := bson.D{}
 
+	// build IN-List of course types
+	var courseTypes []int32
+	switch searchSpecs.SearchMode {
+	case CourseSearchModeAll:
+		courseTypes = append(courseTypes, lookups.CourseTypeStandard)
+		courseTypes = append(courseTypes, lookups.CourseTypeCustom)
+	case CourseSearchModeStandard:
+		courseTypes = append(courseTypes, lookups.CourseTypeStandard)
+	case CourseSearchModeCustom:
+		courseTypes = append(courseTypes, lookups.CourseTypeCustom)
+	}
+
 	if searchSpecs.Credentials.RoleCode == lookups.UserRoleGuest {
 		// anonymous visitors will only receive PUBLIC routes
 		if searchSpecs.SearchTerm == "" {
 			filter = bson.D{
 				// every next field is AND
-				{Key: "gameCD", Value: gameCode},                                      // $eq kann wegelassen werden
-				{Key: "courseTypeCD", Value: bson.D{{Key: "$exists", Value: "true"}}}, // return std and community courses
+				{Key: "gameCD", Value: searchSpecs.GameCode}, // $eq kann wegelassen werden
+				{Key: "courseTypeCD", Value: bson.D{ // selects courses rather than championships, just like $exists
+					{Key: "$in", Value: courseTypes},
+				}},
+				{Key: "seriesCD", Value: bson.D{
+					{Key: "$in", Value: searchSpecs.SeriesCodes},
+				}},
 				{Key: "visibilityCD", Value: lookups.VisibilityAll},
 			}
 		} else {
 			filter = bson.D{
 				// every next field is AND
-				{Key: "gameCD", Value: gameCode},                                      // $eq kann wegelassen werden
-				{Key: "courseTypeCD", Value: bson.D{{Key: "$exists", Value: "true"}}}, // return std and community courses
+				{Key: "gameCD", Value: searchSpecs.GameCode}, // $eq kann wegelassen werden
+				{Key: "courseTypeCD", Value: bson.D{ // selects courses rather than championships, just like $exists
+					{Key: "$in", Value: courseTypes},
+				}},
+				{Key: "seriesCD", Value: bson.D{
+					{Key: "$in", Value: searchSpecs.SeriesCodes},
+				}},
 				{Key: "visibilityCD", Value: lookups.VisibilityAll},
 				{Key: "$or", Value: bson.A{ // AND OR (...
 					bson.D{{Key: "name", Value: primitive.Regex{Pattern: ".*" + searchSpecs.SearchTerm + ".*", Options: "/i"}}}, // LIKE %searchTerm% (case-insensitive)
@@ -226,16 +251,26 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 			if searchSpecs.SearchTerm == "" {
 				filter = bson.D{
 					// every next field is AND
-					{Key: "gameCD", Value: gameCode},                                      // $eq kann wegelassen werden
-					{Key: "courseTypeCD", Value: bson.D{{Key: "$exists", Value: "true"}}}, // return std and community courses
+					{Key: "gameCD", Value: searchSpecs.GameCode}, // $eq kann wegelassen werden
+					{Key: "courseTypeCD", Value: bson.D{ // selects courses rather than championships, just like $exists
+						{Key: "$in", Value: courseTypes},
+					}},
+					{Key: "seriesCD", Value: bson.D{
+						{Key: "$in", Value: searchSpecs.SeriesCodes},
+					}},
 					// visibility check removed
 				}
 			} else {
 				// apply search Term
 				filter = bson.D{
 					// every next field is AND
-					{Key: "gameCD", Value: gameCode},                                      // $eq kann wegelassen werden
-					{Key: "courseTypeCD", Value: bson.D{{Key: "$exists", Value: "true"}}}, // return std and community courses
+					{Key: "gameCD", Value: searchSpecs.GameCode}, // $eq kann wegelassen werden
+					{Key: "courseTypeCD", Value: bson.D{ // selects courses rather than championships, just like $exists
+						{Key: "$in", Value: courseTypes},
+					}},
+					{Key: "seriesCD", Value: bson.D{
+						{Key: "$in", Value: searchSpecs.SeriesCodes},
+					}},
 					// visibility check removed
 					{Key: "$or", Value: bson.A{ // AND OR (...
 						bson.D{{Key: "name", Value: primitive.Regex{Pattern: ".*" + searchSpecs.SearchTerm + ".*", Options: "/i"}}}, // LIKE %searchTerm% (case-insensitive)
@@ -253,8 +288,13 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 			if searchSpecs.SearchTerm == "" {
 				filter = bson.D{
 					// every next field is AND
-					{Key: "gameCD", Value: gameCode},                                      // $eq kann wegelassen werden
-					{Key: "courseTypeCD", Value: bson.D{{Key: "$exists", Value: "true"}}}, // return std and community courses
+					{Key: "gameCD", Value: searchSpecs.GameCode}, // $eq kann wegelassen werden
+					{Key: "courseTypeCD", Value: bson.D{ // selects courses rather than championships, just like $exists
+						{Key: "$in", Value: courseTypes},
+					}},
+					{Key: "seriesCD", Value: bson.D{
+						{Key: "$in", Value: searchSpecs.SeriesCodes},
+					}},
 					// visibility check
 					{Key: "$or", Value: bson.A{
 						bson.D{{Key: "visibilityCD", Value: 0}},
@@ -268,8 +308,13 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearch) ([]CourseListItem,
 			} else {
 				filter = bson.D{
 					// every next field is AND
-					{Key: "gameCD", Value: gameCode},                                      // $eq kann wegelassen werden
-					{Key: "courseTypeCD", Value: bson.D{{Key: "$exists", Value: "true"}}}, // return std and community courses
+					{Key: "gameCD", Value: searchSpecs.GameCode}, // $eq kann wegelassen werden
+					{Key: "courseTypeCD", Value: bson.D{ // selects courses rather than championships, just like $exists
+						{Key: "$in", Value: courseTypes},
+					}},
+					{Key: "seriesCD", Value: bson.D{
+						{Key: "$in", Value: searchSpecs.SeriesCodes},
+					}},
 					// visibility check
 					{Key: "$or", Value: bson.A{
 						bson.D{{Key: "visibilityCD", Value: 0}},

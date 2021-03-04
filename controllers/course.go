@@ -60,12 +60,12 @@ func AddCourse(c *gin.Context) {
 }
 
 // ListCourses returns a list of racing tracks
-// format => http://localhost:3000/courses?game=fh4&search=roger
+// format => http://localhost:3000/courses?game=0&series=0,&series=2&search=test
 func ListCourses(c *gin.Context) {
 
-	/*var apiError ErrorResponse
+	var apiError ErrorResponse
 
-	apiError.Code = InvalidJSON
+	/*apiError.Code = InvalidJSON
 	apiError.Message = apiError.String(apiError.Code)
 	c.JSON(http.StatusUnprocessableEntity, apiError)
 	return
@@ -77,10 +77,49 @@ func ListCourses(c *gin.Context) {
 	// Service is public, however members receive more results (and do need to wait for another request)
 	userID, _ := authentication.Authenticate(c.Request)
 
-	var search *models.CourseSearch
-	search = new(models.CourseSearch)
+	var search *models.CourseSearchParams
+	search = new(models.CourseSearchParams)
 
-	search.GameText = c.Query("game")
+	i, err := strconv.Atoi(c.Query("searchMode"))
+	if err != nil {
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	}
+	search.SearchMode = i
+
+	i, err = strconv.Atoi(c.Query("game"))
+	if err != nil {
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	}
+	search.GameCode = int32(i)
+
+	series := c.QueryArray("series")
+	if series == nil {
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	}
+	for _, str := range series {
+		i, err = strconv.Atoi(str)
+		// ignore invalid codes
+		if err == nil {
+			search.SeriesCodes = append(search.SeriesCodes, int32(i))
+		}
+	}
+	if search.SeriesCodes == nil {
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	}
+
+	// variable wiederholt sich einfach im url
 	search.SearchTerm = c.Query("search")
 	// since models shouldn't open DB-connections on their own
 	// the user credentials are passed to it
