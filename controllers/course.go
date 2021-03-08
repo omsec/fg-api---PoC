@@ -60,7 +60,7 @@ func AddCourse(c *gin.Context) {
 }
 
 // ListCourses returns a list of racing tracks
-// format => http://localhost:3000/courses?game=0&series=0,&series=2&search=test
+// format => http://localhost:3000/courses?searchMode=2&game=0&series=0&series=2&search=test
 func ListCourses(c *gin.Context) {
 
 	var apiError ErrorResponse
@@ -216,7 +216,10 @@ func UpdateCourse(c *gin.Context) {
 
 	credentials, _ := env.userModel.GetCredentials(userID)
 
-	// use "shouldBind" not all fields are required in this context
+	// ToDo: Evtl. eigene data struct machen, da RecVer vorhanden sein muss
+	// fehlend != 0
+
+	// use "shouldBind" not all fields are required in this context (eg. MetaInfo.recVer is requred)
 	if err = c.ShouldBindJSON(&data); err != nil {
 		apiError.Code = InvalidJSON
 		apiError.Message = apiError.String(apiError.Code)
@@ -224,7 +227,7 @@ func UpdateCourse(c *gin.Context) {
 		return
 	}
 
-	// validate request
+	// validate request (inhaltlich)
 	course, err := env.courseModel.Validate(data)
 	if err != nil {
 		status, apiError := HandleError(err)

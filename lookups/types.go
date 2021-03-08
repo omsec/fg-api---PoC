@@ -12,6 +12,7 @@ const (
 	LTgame
 	LTvisibility
 	LTcourseType
+	LTcourseStyle
 	LTseries
 	LTcarClass
 )
@@ -35,6 +36,8 @@ func LookupType(lt int) string {
 		str = "visibility"
 	case lt == LTcourseType:
 		str = "course type"
+	case lt == LTcourseStyle:
+		str = "course style"
 	case lt == LTseries:
 		str = "series"
 	case lt == LTcarClass:

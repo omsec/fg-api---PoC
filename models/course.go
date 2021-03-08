@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"fmt"
 	"forza-garage/database"
 	"forza-garage/helpers"
 	"forza-garage/lookups"
@@ -25,6 +26,8 @@ type Course struct {
 	GameText       string             `json:"gameText" bson:"-"`
 	TypeCode       int32              `json:"typeCode" bson:"courseTypeCD"` // identifies object type (for searches, $exists)
 	TypeText       string             `json:"typeText" bson:"-"`
+	StyleCode      int32              `json:"styleCode" bson:"styleCD"` // circuit/sprint
+	StyleText      string             `json:"styleText" bson:"-"`
 	ForzaSharing   int32              `json:"forzaSharing" bson:"forzaSharing"` // sparse index in collection
 	Name           string             `json:"name" bson:"name"`                 // same name as CMPs to enables over-all searches
 	SeriesCode     int32              `json:"seriesCode" bson:"seriesCD"`
@@ -32,7 +35,7 @@ type Course struct {
 	CarClassesCode []int32            `json:"carClassesCode" bson:"carClassesCD"`
 	CarClassesText []string           `json:"carClassesText" bson:"-"`
 	Route          *CourseRef         `json:"route" bson:"route,omitempty"` // standard route which a custom route is based on
-	// ToDo: circuit/sprint
+	Tags           []string           `json:"tags" bson:"tags"`
 	// omitempty merkt selber, ob das feld im json vorhanden war :-) ohne wird def-wert des typs gespeichert
 	// von angular käme dann wohl null von einem leeren control
 	//OptionalNum    int32              `json:"optionalNum" bson:"optionalNum,omitempty"`
@@ -58,6 +61,8 @@ type CourseListItem struct {
 	ForzaSharing   int32              `json:"forzaSharing"`
 	SeriesCode     int32              `json:"seriesCode"`
 	SeriesText     string             `json:"seriesText"`
+	StyleCode      int32              `json:"styleCode"`
+	StyleText      string             `json:"styleText"`
 	CarClassesCode []int32            `json:"carClassesCode"`
 	CarClassesText []string           `json:"carClassesText"`
 }
@@ -87,6 +92,7 @@ type CourseModel struct {
 }
 
 // Validate checks given values and sets defaults where applicable (immutable)
+// ToDo: überlegen (best bractice): Validate(c *Course) and change that or return a new object (immunitable?)
 func (m CourseModel) Validate(course Course) (*Course, error) {
 
 	cleaned := course
@@ -140,7 +146,7 @@ func (m CourseModel) CreateCourse(course *Course) (string, error) {
 	course.ID = primitive.NewObjectID()
 	course.MetaInfo.TouchedTS = time.Now()
 	course.MetaInfo.Rating = 0
-	course.MetaInfo.RecVer = 0
+	course.MetaInfo.RecVer = 1
 	course.TypeCode = lookups.CourseTypeCustom
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -180,6 +186,7 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams) ([]CourseLis
 		{Key: "name", Value: 1},
 		{Key: "forzaSharing", Value: 1},
 		{Key: "seriesCD", Value: 1},
+		{Key: "styleCD", Value: 1},
 		{Key: "carClassesCD", Value: 1},
 	}
 
@@ -371,6 +378,8 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams) ([]CourseLis
 		course.ForzaSharing = v.ForzaSharing
 		course.SeriesCode = v.SeriesCode
 		course.SeriesText = database.GetLookupText(lookups.LookupType(lookups.LTseries), v.SeriesCode)
+		course.StyleCode = v.StyleCode
+		course.StyleText = database.GetLookupText(lookups.LookupType(lookups.LTcourseStyle), v.StyleCode)
 		course.CarClassesCode = v.CarClassesCode
 		//course.CarClassText = database.GetLookupText(lookups.LookupType(lookups.LTcarClass), v.CarClassCode)
 		course.CarClassesText = make([]string, len(v.CarClassesCode))
@@ -429,8 +438,8 @@ func (m CourseModel) UpdateCourse(course *Course, credentials *Credentials) erro
 	filter := bson.D{{Key: "_id", Value: course.ID}}
 
 	data := struct {
-		CreatedID      primitive.ObjectID `bson:"_id"`
-		RecVer         int64              `bson:"recVer"`
+		CreatedID      primitive.ObjectID `bson:"metaInfo.createdID"`
+		MetaInfo       Header             `bson:"metaInfo"` // declare & reserve entire nested object (seems required by driver)
 		VisibilityCode int32              `bson:"visibilityCD"`
 	}{}
 
@@ -450,17 +459,23 @@ func (m CourseModel) UpdateCourse(course *Course, credentials *Credentials) erro
 		return helpers.WrapError(err, helpers.FuncName())
 	}
 
-	if (data.CreatedID != credentials.UserID) && (credentials.RoleCode < lookups.UserRoleAdmin) {
-		return ErrDenied
-	}
+	/*
+		if (data.CreatedID != credentials.UserID) && (credentials.RoleCode < lookups.UserRoleAdmin) {
+			fmt.Println("test1")
+			return ErrDenied
+		}
+	*/
 
+	// ToDO: GrantPermission für Course-Klasse erstellen
 	err = GrantPermissions(data.VisibilityCode, data.CreatedID, credentials)
 	if err != nil {
+		fmt.Println("test1")
 		// no wrapping needed, since function returns app errors
 		return err
 	}
 
-	if data.RecVer != course.MetaInfo.RecVer {
+	// optimistic lock check
+	if data.MetaInfo.RecVer != course.MetaInfo.RecVer {
 		// document was changed by another user since last read
 		return ErrRecordChanged
 	}
@@ -491,7 +506,9 @@ func (m CourseModel) UpdateCourse(course *Course, credentials *Credentials) erro
 		{Key: "$set", Value: bson.D{{Key: "forzaSharing", Value: course.ForzaSharing}}},
 		{Key: "$set", Value: bson.D{{Key: "name", Value: course.Name}}},
 		{Key: "$set", Value: bson.D{{Key: "seriesCD", Value: course.SeriesCode}}},
+		{Key: "$set", Value: bson.D{{Key: "styleCD", Value: course.StyleCode}}},
 		{Key: "$set", Value: bson.D{{Key: "carClassesCD", Value: course.CarClassesCode}}},
+		{Key: "$set", Value: bson.D{{Key: "tags", Value: course.Tags}}},
 	}
 
 	result, err := m.Collection.UpdateOne(ctx, filter, fields)
@@ -515,6 +532,7 @@ func (m CourseModel) addLookups(course *Course) *Course {
 	course.GameText = database.GetLookupText(lookups.LookupType(lookups.LTgame), course.GameCode)
 	course.TypeText = database.GetLookupText(lookups.LookupType(lookups.LTcourseType), course.TypeCode)
 	course.SeriesText = database.GetLookupText(lookups.LookupType(lookups.LTseries), course.SeriesCode)
+	course.StyleText = database.GetLookupText(lookups.LookupType(lookups.LTcourseStyle), course.StyleCode)
 	// course.CarClassText = database.GetLookupText(lookups.LookupType(lookups.LTcarClass), course.CarClassCode)
 	course.CarClassesText = make([]string, len(course.CarClassesCode))
 	for i := range course.CarClassesCode {

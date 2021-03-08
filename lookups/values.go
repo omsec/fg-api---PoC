@@ -35,6 +35,12 @@ const (
 	CourseTypeCustom
 )
 
+// course style
+const (
+	CourseStyleCircuit = iota
+	CourseStyleSprint
+)
+
 // series
 const (
 	SeriesRoad = iota

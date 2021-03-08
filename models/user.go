@@ -65,14 +65,14 @@ type UserModel struct {
 // UserExists checks if a User Name is available - used in client for in-type error checking
 // (wrapper of internal helper function)
 func (m UserModel) UserExists(userName string) bool {
-	b, _ := userExists(m.Collection, userName)
+	b, _ := m.userExists(userName)
 	return b
 }
 
 // EMailAddressExists checks if an eMail-Address is already assigned with any User Name
 // used in client for in-type error checking
 func (m UserModel) EMailAddressExists(eMailAddress string) bool {
-	b, _ := eMailExists(m.Collection, eMailAddress)
+	b, _ := m.eMailExists(eMailAddress)
 	return b
 }
 
@@ -87,13 +87,13 @@ func (m UserModel) CreateUser(user User) (string, error) {
 	// braucht Hilfs-Proc (package DB) um die MSG zu parsen key: ....
 	// "multiple write errors: [{write errors: [{E11000 duplicate key error collection: forzaGarage.users index: loginName_1 dup key: { loginName: \"roger\" }}]}, {<nil>}]"
 	// https://stackoverflow.com/questions/56916969/with-mongodb-go-driver-how-do-i-get-the-inner-exceptions
-	b, err := userExists(m.Collection, user.LoginName)
+	b, err := m.userExists(user.LoginName)
 	if b || err != nil {
 		return "", ErrUserNameNotAvailable
 	}
 
 	// ToDo: entfernen => PK in DB machen
-	b, err = eMailExists(m.Collection, user.EMailAddress)
+	b, err = m.eMailExists(user.EMailAddress)
 	if b || err != nil {
 		return "", ErrEMailAddressTaken
 	}
@@ -598,9 +598,14 @@ func UserReferenced(slice []UserRef, val primitive.ObjectID) bool {
 }
 
 // GrantPermissions enforces access rights
+// ToDo: build for every entity/class - 'user' use only here
 func GrantPermissions(itemVisibilityCode int32, itemCreatorID primitive.ObjectID, credentials *Credentials) error {
 
 	if credentials.RoleCode == lookups.UserRoleAdmin {
+		return nil
+	}
+
+	if itemCreatorID == credentials.UserID {
 		return nil
 	}
 
@@ -623,10 +628,8 @@ func GrantPermissions(itemVisibilityCode int32, itemCreatorID primitive.ObjectID
 	return nil
 }
 
-// internal implementations that are used by multiple methods of the model and corresponding handlers
-// ToDo: müsste nicht ausgelagert sein, kann private member sein (klein schreiben)
-
-func userExists(collection *mongo.Collection, userName string) (bool, error) {
+// internal (private) implementations that are used by multiple (public) methods of the model and corresponding handlers
+func (m UserModel) userExists(userName string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel() // nach 10 Sekunden abbrechen
 
@@ -639,7 +642,7 @@ func userExists(collection *mongo.Collection, userName string) (bool, error) {
 	}{}
 
 	// some (old) sources say FindOne is slow and we should use find instead... (?)
-	err := collection.FindOne(ctx, bson.M{"loginName": userName}, options.FindOne().SetProjection(fields)).Decode(&data)
+	err := m.Collection.FindOne(ctx, bson.M{"loginName": userName}, options.FindOne().SetProjection(fields)).Decode(&data)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return false, nil
@@ -651,7 +654,7 @@ func userExists(collection *mongo.Collection, userName string) (bool, error) {
 	return true, nil
 }
 
-func eMailExists(collection *mongo.Collection, emailAddress string) (bool, error) {
+func (m UserModel) eMailExists(emailAddress string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel() // nach 10 Sekunden abbrechen
 
@@ -665,7 +668,7 @@ func eMailExists(collection *mongo.Collection, emailAddress string) (bool, error
 
 	// some (old) sources say FindOne is slow and we should use find instead... (?)
 	// ToDO: Add index to field in MongoDB
-	err := collection.FindOne(ctx, bson.M{"eMail": emailAddress}, options.FindOne().SetProjection(fields)).Decode(&data)
+	err := m.Collection.FindOne(ctx, bson.M{"eMail": emailAddress}, options.FindOne().SetProjection(fields)).Decode(&data)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return false, nil
