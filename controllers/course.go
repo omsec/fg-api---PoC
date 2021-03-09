@@ -56,7 +56,7 @@ func AddCourse(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, Created{id})
+	c.JSON(http.StatusCreated, Created{id})
 }
 
 // ListCourses returns a list of racing tracks

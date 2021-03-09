@@ -91,6 +91,70 @@ func GetUser(c *gin.Context) {
 	c.JSON(http.StatusOK, &user)
 }
 
+// BlockUser adds someone to the user's ignorelist
+func BlockUser(c *gin.Context) { // ToDo: Unlock
+
+	var apiError ErrorResponse
+
+	userID, err := authentication.Authenticate(c.Request)
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	// anonymous struct used to receive input (POST BODY)
+	data := struct {
+		BlockedUserID string `json:"blockedUserID" binding:"required"`
+	}{}
+
+	// use 'shouldBind' so we can send customized messages
+	if err := c.ShouldBindJSON(&data); err != nil {
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	}
+
+	err = env.userModel.BlockUser(userID, data.BlockedUserID)
+	if err != nil {
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
+		return
+	}
+}
+
+// UnblockUser removes someone from the user's ignorelist
+func UnblockUser(c *gin.Context) { // ToDo: Unlock
+
+	var apiError ErrorResponse
+
+	userID, err := authentication.Authenticate(c.Request)
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	// anonymous struct used to receive input (POST BODY)
+	data := struct {
+		BlockedUserID string `json:"blockedUserID" binding:"required"`
+	}{}
+
+	// use 'shouldBind' so we can send customized messages
+	if err := c.ShouldBindJSON(&data); err != nil {
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	}
+
+	err = env.userModel.UnblockUser(userID, data.BlockedUserID)
+	if err != nil {
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
+		return
+	}
+}
+
 // GetFriends sends a profile
 func GetFriends(c *gin.Context) {
 
@@ -190,7 +254,6 @@ func AddFriend(c *gin.Context) {
 	}
 
 	// anonymous struct used to receive input (POST BODY)
-	// ToDo: mehrere auf einmal vorsehen - nötig?
 	data := struct {
 		FriendID string `json:"friendID" binding:"required"`
 	}{}
@@ -221,6 +284,8 @@ func RemoveFriend(c *gin.Context) {
 		c.Status(http.StatusUnauthorized)
 		return
 	}
+
+	// ToDo: umstellwen auf query-param
 
 	// anonymous struct used to receive input (POST BODY)
 	// ToDo: mehrere auf einmal vorsehen - nötig?

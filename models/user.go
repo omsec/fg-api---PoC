@@ -34,6 +34,7 @@ type User struct {
 
 // Credentials is used for programmatic control
 // non-ptr values require annotations!
+// ToDO: move to Env
 type Credentials struct {
 	UserID       primitive.ObjectID
 	LoginName    string
@@ -345,9 +346,76 @@ func (m UserModel) GetFollowers(userID string) ([]UserRef, error) {
 	return m.getReferences(userID, "follower")
 }
 
-// AddFriend adds another user to the friendlist
+// BlockUser blocks another user's interactions
+func (m UserModel) BlockUser(userID string, blockedUserID string) error {
+	if userID == blockedUserID {
+		return ErrInvalidUser
+	}
+
+	// objectID required for update
+	userOID, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		return ErrInvalidUser
+	}
+
+	// ToDo: Evtl. bessere Lösung um die userNamen zu lesen
+	userInfo, err := m.GetCredentials(userID)
+	if err != nil {
+		return err
+	}
+
+	blockedUserInfo, err := m.GetCredentials(blockedUserID)
+	if err != nil {
+		return err
+	}
+
+	data := UserRef{
+		UserID:        userOID,
+		UserName:      userInfo.LoginName,
+		ReferenceID:   blockedUserInfo.UserID,
+		ReferenceName: blockedUserInfo.LoginName,
+		ReferenceType: "user",
+		RelationType:  "blocking"}
+
+	// nil or wrapped error
+	return m.addReference(data)
+
+}
+
+// UnblockUser un-blocks another user's interactions
+func (m UserModel) UnblockUser(userID string, blockedUserID string) error {
+	if userID == blockedUserID {
+		return ErrInvalidUser
+	}
+
+	// objectID required for update
+	userOID, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		return ErrInvalidUser
+	}
+
+	// objectID required for update
+	blockedUserOID, err := primitive.ObjectIDFromHex(blockedUserID)
+	if err != nil {
+		return ErrInvalidUser
+	}
+
+	data := UserRef{
+		UserID:        userOID,
+		UserName:      "",
+		ReferenceID:   blockedUserOID,
+		ReferenceName: "",
+		ReferenceType: "",
+		RelationType:  "blocking"}
+
+	// nil or wrapped error
+	return m.removeReference(data)
+
+}
+
+// AddFriend adds another user to the friendlist (receives strings from controller)
 func (m UserModel) AddFriend(userID string, friendUserID string) error {
-	// ToDO: Mehrere auf einmal unterstüzen?
+	// ToDO: Check if taerget has blocked
 
 	if userID == friendUserID {
 		return ErrInvalidFriend
@@ -385,15 +453,8 @@ func (m UserModel) AddFriend(userID string, friendUserID string) error {
 		ReferenceType: "user",
 		RelationType:  "friend"}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel() // nach 10 Sekunden abbrechen
-
-	_, err = m.Social.InsertOne(ctx, data)
-	if err != nil {
-		return helpers.WrapError(err, helpers.FuncName())
-	}
-
-	return nil
+	// nil or wrapped error
+	return m.addReference(data)
 }
 
 // RemoveFriend deletes a user from the friendlist
@@ -452,6 +513,42 @@ func (m UserModel) FollowUser(userID string, followUserID string) error {
 	return nil
 }
 
+// private proc to write relations/referenced documents, such as friends
+func (m UserModel) addReference(userRef UserRef) error {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel() // nach 10 Sekunden abbrechen
+
+	// ID currently not needed
+	_, err := m.Social.InsertOne(ctx, userRef)
+	if err != nil {
+		return helpers.WrapError(err, helpers.FuncName())
+	}
+
+	return nil
+}
+
+// private proc to delete relations/referenced documents, such as friends
+func (m UserModel) removeReference(userRef UserRef) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel() // nach 10 Sekunden abbrechen
+
+	// build unique key
+	filter := bson.D{
+		{Key: "userID", Value: userRef.UserID},
+		{Key: "refID", Value: userRef.ReferenceID},
+		{Key: "relType", Value: userRef.RelationType},
+	}
+
+	_, err := m.Social.DeleteOne(ctx, filter)
+	if err != nil {
+		return helpers.WrapError(err, helpers.FuncName())
+	}
+	// fmt.Println(res.DeletedCount)
+
+	return nil
+}
+
 // private proc to read relations/referenced documents, such as friends
 func (m UserModel) getReferences(userID string, relationType string) ([]UserRef, error) {
 	// TODO: Validate inparams
@@ -481,6 +578,12 @@ func (m UserModel) getReferences(userID string, relationType string) ([]UserRef,
 	var filter bson.M
 
 	switch relationType {
+	case "blocking":
+		// user A has blocked user B
+		filter = bson.M{
+			"relType": relationType,
+			"userID":  userOID,
+		}
 	case "friend":
 		filter = bson.M{
 			"relType": relationType,

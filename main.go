@@ -40,41 +40,48 @@ func handleRequests() {
 	router.POST("/login", controllers.Login)
 	router.POST("/logout", authentication.TokenAuthMiddleware(), controllers.Logout) // DELETE in Vorlage (Achtung Server-Rechte)
 	router.POST("/refresh", controllers.Refresh)                                     // nicht prüfen, ob das at noch valide ist (keine Middleware)
-	router.POST("/user/exists", controllers.UserExists)
 	router.POST("/register", controllers.Register)
 
+	router.POST("/user/exists", controllers.UserExists)
 	router.POST("/email/exists", controllers.EMailExists)
 
 	// user-mgmt
-	router.GET("users/:id", authentication.TokenAuthMiddleware(), controllers.GetUser)
+	router.GET("/users/:id", authentication.TokenAuthMiddleware(), controllers.GetUser)
 	router.POST("/user/changePass", authentication.TokenAuthMiddleware(), controllers.ChangePassword)
 	router.POST("/user/verifyPass", authentication.TokenAuthMiddleware(), controllers.VerifyPassword)
 
-	router.GET("user/getFriends/:id", authentication.TokenAuthMiddleware(), controllers.GetFriends)
-	router.POST("/user/addFriend", authentication.TokenAuthMiddleware(), controllers.AddFriend)
-	router.POST("/user/removeFriend", authentication.TokenAuthMiddleware(), controllers.RemoveFriend)
+	router.POST("/users/:id/blocked", authentication.TokenAuthMiddleware(), controllers.BlockUser)
+	router.DELETE("/users/:id/blocked", authentication.TokenAuthMiddleware(), controllers.UnblockUser)
 
-	router.GET("user/getFollowings/:id", authentication.TokenAuthMiddleware(), controllers.GetFollowings)
-	router.POST("/user/follow", authentication.TokenAuthMiddleware(), controllers.FollowUser)
+	router.GET("/users/:id/friends", authentication.TokenAuthMiddleware(), controllers.GetFriends)
+	router.POST("/users/:id/friends", authentication.TokenAuthMiddleware(), controllers.AddFriend)
+	router.DELETE("/users/:id/friends", authentication.TokenAuthMiddleware(), controllers.RemoveFriend) // ToDo: anpassn {id}
 
-	router.GET("user/getFollowers/:id", authentication.TokenAuthMiddleware(), controllers.GetFollowers)
+	router.GET("/users/:id/followings", authentication.TokenAuthMiddleware(), controllers.GetFollowings)
+	router.POST("/users/:id/followings", authentication.TokenAuthMiddleware(), controllers.FollowUser) // ToDo: Vs Verb "follow"
+
+	router.GET("/users/:id/followers", authentication.TokenAuthMiddleware(), controllers.GetFollowers)
 
 	// course
 	// GET hat keinen BODY (Go/Gin & Postman unterstützen das zwar, Angular nicht) - deshalb Parameter
 	// https://xspdf.com/resolution/58530870.html
 	router.GET("/courses", controllers.ListCourses)
 	router.GET("/courses/:id", controllers.GetCourse)
-	router.POST("/course/add", authentication.TokenAuthMiddleware(), controllers.AddCourse)
-	router.PUT("/course/edit/:id", authentication.TokenAuthMiddleware(), controllers.UpdateCourse)
+	router.POST("/courses", authentication.TokenAuthMiddleware(), controllers.AddCourse)
+	router.PUT("/courses/:id", authentication.TokenAuthMiddleware(), controllers.UpdateCourse)
+	// ToDO: Delete
+
 	router.POST("/course/exists", authentication.TokenAuthMiddleware(), controllers.ExistsForzaShare) // protected to prevent sniffs ;-)
 
 	/*
 		URL scheme:
-		router.GET("/aufgaben", authentication.TokenAuthMiddleware(), controllers.ListAufgaben)
-		router.GET("/aufgabe/:id", authentication.TokenAuthMiddleware(), controllers.GetAufgabe)
-		router.DELETE("/aufgabe/:id", authentication.TokenAuthMiddleware(), controllers.DeleteAufgabe)
-		router.POST("/aufgaben/add", authentication.TokenAuthMiddleware(), controllers.CreateAufgabe)
-		router.POST("/aufgaben/edit/:id", authentication.TokenAuthMiddleware(), controllers.UpdateAufgabe)
+		router.GET("/courses", controllers.ListCourses) 200 | 204
+		router.GET("/courses/:id", controllers.GetCourse) 200 | 204
+		router.POST("/courses", authentication.TokenAuthMiddleware(), controllers.AddCourse) 201 | 422 | (permission)
+		router.PUT("/courses/:id", authentication.TokenAuthMiddleware(), controllers.UpdateCourse) 200 | 422
+		router.DELETE("/courses/:id", authentication.TokenAuthMiddleware(), controllers.UpdateCourse) 200 | 422
+		// logics (domain-singular/verb)
+		router.POST("/courses/exists", authentication.TokenAuthMiddleware(), controllers.ExistsForzaShare) // protected to prevent sniffs ;-)
 	*/
 
 	switch os.Getenv("APP_ENV") {

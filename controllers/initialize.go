@@ -18,6 +18,9 @@ type Env struct {
 func newEnv(client *mongo.Client) *Env {
 	env := &Env{}
 
+	// ToDo:
+	// Read&Save Credentials of current user, pass to Models (via constructor)
+
 	env.userModel.Client = client
 	env.userModel.Collection = client.Database(os.Getenv("DB_NAME")).Collection("users") // ToDO: Const
 	env.userModel.Social = client.Database(os.Getenv("DB_NAME")).Collection("social")    // ToDO: Const
