@@ -91,8 +91,10 @@ type CourseModel struct {
 	Collection *mongo.Collection
 }
 
+// Models do not change original values passed by the controllers, but return new structures
+// arguments passed by ref (pointers) for performance
+
 // Validate checks given values and sets defaults where applicable (immutable)
-// ToDo: überlegen (best bractice): Validate(c *Course) and change that or return a new object (immunitable?)
 func (m CourseModel) Validate(course Course) (*Course, error) {
 
 	cleaned := course
@@ -488,6 +490,7 @@ func (m CourseModel) UpdateCourse(course *Course, credentials *Credentials) erro
 	// set "systemfields"
 	course.MetaInfo.ModifiedID = credentials.UserID
 	course.MetaInfo.ModifiedName = credentials.LoginName
+	//now := time.Now()
 	course.MetaInfo.ModifiedTS = time.Now()
 	course.MetaInfo.TouchedTS = course.MetaInfo.ModifiedTS
 
@@ -498,7 +501,7 @@ func (m CourseModel) UpdateCourse(course *Course, credentials *Credentials) erro
 		{Key: "$set", Value: bson.D{{Key: "metaInfo.modifiedID", Value: course.MetaInfo.ModifiedID}}},
 		{Key: "$set", Value: bson.D{{Key: "metaInfo.modifiedName", Value: course.MetaInfo.ModifiedName}}},
 		{Key: "$set", Value: bson.D{{Key: "metaInfo.touchedTS", Value: course.MetaInfo.TouchedTS}}},
-		{Key: "$inc", Value: bson.D{{Key: "metaInfo.recVer", Value: 1}}},
+		{Key: "$inc", Value: bson.D{{Key: "metaInfo.recVer", Value: 1}}}, // increase record version no
 		// payload
 		{Key: "$set", Value: bson.D{{Key: "visibilityCD", Value: course.VisibilityCode}}},
 		{Key: "$set", Value: bson.D{{Key: "gameCD", Value: course.GameCode}}},

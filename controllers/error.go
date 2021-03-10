@@ -21,6 +21,10 @@ type ErrorResponse struct {
 // HandleError encodes the std ErrorResponse
 func HandleError(err error) (httpStatus int, apiError ErrorResponse) {
 
+	// Status grundsätzlich 422 (Unprocessable Entity)
+	// diese werden vom Client als App-Error behandelt
+	// und mit einer "lesbaren" Fehlermeldung versehen
+
 	if err == nil {
 		apiError.Code = 0
 		apiError.Message = ""
@@ -34,11 +38,11 @@ func HandleError(err error) (httpStatus int, apiError ErrorResponse) {
 	case models.ErrMultipleRecords:
 		apiError.Code = MultipleRecords
 		apiError.Message = apiError.String(apiError.Code)
-		httpStatus = http.StatusInternalServerError
+		httpStatus = http.StatusInternalServerError // Datenfehler auf dem Server, Client "crashen" lassen ("something went wrong")
 	case models.ErrRecordChanged:
 		apiError.Code = RecordChanged
 		apiError.Message = apiError.String(apiError.Code)
-		httpStatus = http.StatusInternalServerError // ToDO: evtl. was anderes?
+		httpStatus = http.StatusUnprocessableEntity
 	// permissions
 	case models.ErrGuest:
 		apiError.Code = PermissionGuest

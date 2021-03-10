@@ -7,7 +7,6 @@ import (
 )
 
 // Header is used as an embedded type for an object's meta-info
-// ToDo: evtl. mehr ptr & omitempty
 // no required bindings (binding:"required") since the CRUD-Operations have different meanings
 type Header struct {
 	CreatedTS    time.Time          `json:"createdTS" bson:"-"` // CreatedTS is read from Mongo's ObjectID
