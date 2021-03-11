@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"forza-garage/authentication"
+	"forza-garage/environment"
 	"forza-garage/models"
 	"net/http"
 	"strconv"
@@ -33,7 +34,7 @@ func AddCourse(c *gin.Context) {
 	}
 
 	// validate request
-	course, err := env.courseModel.Validate(data)
+	course, err := environment.Env.CourseModel.Validate(data)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)
@@ -42,14 +43,14 @@ func AddCourse(c *gin.Context) {
 
 	// ToDO: Evtl. vereinfachen mit Helpers
 	course.MetaInfo.CreatedID = models.ObjectID(userID)
-	course.MetaInfo.CreatedName, err = env.userModel.GetUserName(userID)
+	course.MetaInfo.CreatedName, err = environment.Env.UserModel.GetUserName(userID)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)
 		return
 	}
 
-	id, err := env.courseModel.CreateCourse(course)
+	id, err := environment.Env.CourseModel.CreateCourse(course)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)
@@ -124,7 +125,7 @@ func ListCourses(c *gin.Context) {
 	// since models shouldn't open DB-connections on their own
 	// the user credentials are passed to it
 	// errors maybe ignored here and will be treated as anonymous user
-	search.Credentials, _ = env.userModel.GetCredentials(userID)
+	search.Credentials, _ = environment.Env.UserModel.GetCredentials(userID)
 
 	// use language submitted by client for anonymous users (rather than the one stored in database)
 	if userID == "" {
@@ -136,7 +137,7 @@ func ListCourses(c *gin.Context) {
 	// searchTerm = strings.TrimSpace(data.SearchTerm)
 	// fmt.Println(data.SearchTerm)
 
-	courses, err := env.courseModel.SearchCourses(search)
+	courses, err := environment.Env.CourseModel.SearchCourses(search)
 	if err != nil {
 		// nothing found (not an error to the client)
 		if err == models.ErrNoData {
@@ -170,7 +171,7 @@ func GetCourse(c *gin.Context) {
 
 	// no error checking because it's optional (public courses only)
 	userID, _ := authentication.Authenticate(c.Request)
-	credentials, _ := env.userModel.GetCredentials(userID)
+	credentials, _ := environment.Env.UserModel.GetCredentials(userID)
 
 	// use language submitted by client for anonymous users (rather than the one stored in database)
 	if userID == "" {
@@ -182,7 +183,7 @@ func GetCourse(c *gin.Context) {
 	// typ wird automatisch gesetzt (kann aber STR sein)
 	var id = c.Param("id")
 
-	data, err = env.courseModel.GetCourse(id, credentials)
+	data, err = environment.Env.CourseModel.GetCourse(id, credentials)
 	if err != nil {
 		switch err {
 		// record not found is not an error to the client here
@@ -214,7 +215,7 @@ func UpdateCourse(c *gin.Context) {
 		return
 	}
 
-	credentials, _ := env.userModel.GetCredentials(userID)
+	credentials, _ := environment.Env.UserModel.GetCredentials(userID)
 
 	// ToDo: Evtl. eigene data struct machen, da RecVer vorhanden sein muss
 	// fehlend != 0
@@ -228,7 +229,7 @@ func UpdateCourse(c *gin.Context) {
 	}
 
 	// validate request (inhaltlich)
-	course, err := env.courseModel.Validate(data)
+	course, err := environment.Env.CourseModel.Validate(data)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)
@@ -251,7 +252,7 @@ func UpdateCourse(c *gin.Context) {
 		}
 	*/
 
-	err = env.courseModel.UpdateCourse(course, credentials)
+	err = environment.Env.CourseModel.UpdateCourse(course, credentials)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)
@@ -259,7 +260,6 @@ func UpdateCourse(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent) // evtl. auch 205
-
 }
 
 // Additional & Helper Services
@@ -292,7 +292,7 @@ func ExistsForzaShare(c *gin.Context) {
 		return
 	}
 
-	exists, err := env.courseModel.ForzaSharingExists(data.ForzaSharing)
+	exists, err := environment.Env.CourseModel.ForzaSharingExists(data.ForzaSharing)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)

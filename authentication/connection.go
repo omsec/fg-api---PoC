@@ -1,3 +1,7 @@
+// this package manages its own connection to redis
+// some duplicated code (technical debts)
+// however redis connections are made to a specific DB (id-num) so that's okay for now
+
 package authentication
 
 import (
@@ -16,7 +20,7 @@ func OpenConnection() error {
 	var err error
 
 	var dsn string
-	dsn = os.Getenv("JWT_HOST") + ":" + os.Getenv("JWT_PORT")
+	dsn = os.Getenv("CACHE_HOST") + ":" + os.Getenv("CACHE_PORT")
 
 	dbID, err := strconv.Atoi(os.Getenv("JWT_DB"))
 	if err != nil {
@@ -25,7 +29,7 @@ func OpenConnection() error {
 
 	client = redis.NewClient(&redis.Options{
 		Addr:     dsn,
-		Password: os.Getenv("JWT_PASS"),
+		Password: os.Getenv("CACHE_PASS"),
 		DB:       dbID,
 	})
 

@@ -3,6 +3,7 @@ package controllers
 import (
 	"fmt"
 	"forza-garage/authentication"
+	"forza-garage/environment"
 	"forza-garage/helpers"
 	"forza-garage/models"
 	"net/http"
@@ -39,7 +40,7 @@ func UserExists(c *gin.Context) {
 		return
 	}
 
-	exists := env.userModel.UserExists(data.LoginName)
+	exists := environment.Env.UserModel.UserExists(data.LoginName)
 
 	// wrap response into an object
 	res := struct {
@@ -76,7 +77,7 @@ func EMailExists(c *gin.Context) {
 		return
 	}
 
-	exists := env.userModel.EMailAddressExists(data.EMailAddress)
+	exists := environment.Env.UserModel.EMailAddressExists(data.EMailAddress)
 
 	// wrap response into an object
 	res := struct {
@@ -122,7 +123,7 @@ func Register(c *gin.Context) {
 	}
 
 	// this also validates the user name, pwd etc.
-	ID, err := env.userModel.CreateUser(data)
+	ID, err := environment.Env.UserModel.CreateUser(data)
 	if err != nil {
 		fmt.Println(err)
 		// ToDo: maybe check for an existing XBox-Tag and ask do u really want ... :-)
@@ -163,7 +164,7 @@ func Login(c *gin.Context) {
 	}
 
 	// Benutzer in der DB suchen und das Profil laden
-	dbUser, err = env.userModel.GetUserByName(givenUser.LoginName)
+	dbUser, err = environment.Env.UserModel.GetUserByName(givenUser.LoginName)
 	if err != nil {
 		// user does not exist
 		if err == models.ErrInvalidUser {
@@ -180,7 +181,7 @@ func Login(c *gin.Context) {
 	}
 
 	// übergibt das unverschlüsselte PWD vom Login und das verschlüsselte aus der DB
-	granted := env.userModel.CheckPassword(givenUser.Password, *dbUser)
+	granted := environment.Env.UserModel.CheckPassword(givenUser.Password, *dbUser)
 	if !granted {
 		// send custom error message
 		apiError.Code = InvalidLogin
@@ -197,7 +198,7 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	env.userModel.SetLastSeen(dbUser.ID)
+	environment.Env.UserModel.SetLastSeen(dbUser.ID)
 
 	// passwort nicht erneut zurücksenden
 	dbUser.Password = ""
@@ -266,7 +267,7 @@ func Refresh(c *gin.Context) {
 
 	// Die /refresh Route könnte auch eine leere Antwort zurückgeben. Vielleicht ist die erneute/aktualisierte
 	// Lieferung von <User> mal sinnvoll, bspw. für aktualisierte Sicherheitsinformationen oder einen Zähler etc.
-	dbUser, err := env.userModel.GetUserByID(userID)
+	dbUser, err := environment.Env.UserModel.GetUserByID(userID)
 	if err != nil {
 		// user does not exist - erneute Prüfung eigentlich kaum nötig, kann aber noch mehr Sicherheit geben :-)
 		if err == models.ErrInvalidUser {
@@ -298,7 +299,7 @@ func Refresh(c *gin.Context) {
 		return
 	}
 
-	env.userModel.SetLastSeen(dbUser.ID)
+	environment.Env.UserModel.SetLastSeen(dbUser.ID)
 
 	// passwort nicht erneut zurücksenden
 	dbUser.Password = ""
@@ -347,7 +348,7 @@ func VerifyPassword(c *gin.Context) {
 	}{false}
 
 	// Benutzer in der DB suchen und das Profil laden (via ID aus Token)
-	dbUser, err = env.userModel.GetUserByID(userID)
+	dbUser, err = environment.Env.UserModel.GetUserByID(userID)
 	if err != nil {
 		// user does not exist (return false)
 		if err == models.ErrInvalidUser {
@@ -367,7 +368,7 @@ func VerifyPassword(c *gin.Context) {
 	}
 
 	// übergibt das unverschlüsselte PWD vom Login und das verschlüsselte aus der DB
-	res.Granted = env.userModel.CheckPassword(givenUser.Password, *dbUser)
+	res.Granted = environment.Env.UserModel.CheckPassword(givenUser.Password, *dbUser)
 
 	c.JSON(http.StatusOK, res)
 }
@@ -411,7 +412,7 @@ func ChangePassword(c *gin.Context) {
 	}
 
 	// re-load user's profile to perform additional security checks
-	dbUser, err = env.userModel.GetUserByID(userID)
+	dbUser, err = environment.Env.UserModel.GetUserByID(userID)
 	if err != nil {
 		// user does not exist
 		if err == models.ErrInvalidUser {
@@ -436,7 +437,7 @@ func ChangePassword(c *gin.Context) {
 	}
 
 	// check the current password (again)
-	granted := env.userModel.CheckPassword(data.CurrentPWD, *dbUser)
+	granted := environment.Env.UserModel.CheckPassword(data.CurrentPWD, *dbUser)
 	if !granted {
 		apiError.Code = InvalidRequest
 		apiError.Message = apiError.String(apiError.Code)
@@ -445,7 +446,7 @@ func ChangePassword(c *gin.Context) {
 	}
 
 	// ToDo: Validate new PWD (or include that in SetPWD)
-	err = env.userModel.SetPassword(dbUser.ID, data.NewPassword)
+	err = environment.Env.UserModel.SetPassword(dbUser.ID, data.NewPassword)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)

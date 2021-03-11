@@ -5,6 +5,7 @@ import (
 	"forza-garage/authentication"
 	"forza-garage/controllers"
 	"forza-garage/database"
+	"forza-garage/environment"
 	"forza-garage/middleware"
 	"log"
 	"os"
@@ -112,8 +113,15 @@ func main() {
 	}
 	defer authentication.CloseConnection()
 
+	// connect to Analysis-DB (redis)
+	err = database.OpenRedisConnection()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer database.CloseConnection()
+
 	// Initialize the Models
-	controllers.Initialize()
+	environment.Initialize()
 
 	fmt.Println("Forza-Garage running...")
 	handleRequests()

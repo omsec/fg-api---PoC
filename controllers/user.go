@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"forza-garage/authentication"
+	"forza-garage/environment"
 	"forza-garage/models"
 	"net/http"
 
@@ -33,7 +34,7 @@ func Test(c *gin.Context) {
 	*/
 
 	// fehlender parameter muss nicht geprüft werden, sonst wär's eine andere route
-	user, err := env.userModel.GetUserByID("5feb2473b4d37f7f0285847a")
+	user, err := environment.Env.UserModel.GetUserByID("5feb2473b4d37f7f0285847a")
 	if err != nil {
 		apiError.Code = InvalidRequest
 		apiError.Message = apiError.String(apiError.Code)
@@ -72,7 +73,7 @@ func GetUser(c *gin.Context) {
 	*/
 
 	// fehlender parameter muss nicht geprüft werden, sonst wär's eine andere route
-	user, err := env.userModel.GetUserByID(c.Param("id"))
+	user, err := environment.Env.UserModel.GetUserByID(c.Param("id"))
 	if err != nil {
 		// nothing found (not an error to the client)
 		if err == models.ErrNoData {
@@ -115,7 +116,7 @@ func BlockUser(c *gin.Context) { // ToDo: Unlock
 		return
 	}
 
-	err = env.userModel.BlockUser(userID, data.BlockedUserID)
+	err = environment.Env.UserModel.BlockUser(userID, data.BlockedUserID)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)
@@ -147,7 +148,7 @@ func UnblockUser(c *gin.Context) { // ToDo: Unlock
 		return
 	}
 
-	err = env.userModel.UnblockUser(userID, data.BlockedUserID)
+	err = environment.Env.UserModel.UnblockUser(userID, data.BlockedUserID)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)
@@ -168,7 +169,7 @@ func GetFriends(c *gin.Context) {
 	*/
 
 	// fehlender parameter muss nicht geprüft werden, sonst wär's eine andere route
-	friends, err := env.userModel.GetFriends(c.Param("id"))
+	friends, err := environment.Env.UserModel.GetFriends(c.Param("id"))
 	if err != nil {
 		// nothing found (not an error to the client)
 		if err == models.ErrNoData {
@@ -197,7 +198,7 @@ func GetFollowings(c *gin.Context) {
 	*/
 
 	// fehlender parameter muss nicht geprüft werden, sonst wär's eine andere route
-	friends, err := env.userModel.GetFollowings(c.Param("id"))
+	friends, err := environment.Env.UserModel.GetFollowings(c.Param("id"))
 	if err != nil {
 		// nothing found (not an error to the client)
 		if err == models.ErrNoData {
@@ -226,7 +227,7 @@ func GetFollowers(c *gin.Context) {
 	*/
 
 	// fehlender parameter muss nicht geprüft werden, sonst wär's eine andere route
-	followers, err := env.userModel.GetFollowers(c.Param("id"))
+	followers, err := environment.Env.UserModel.GetFollowers(c.Param("id"))
 	if err != nil {
 		// nothing found (not an error to the client)
 		if err == models.ErrNoData {
@@ -266,7 +267,7 @@ func AddFriend(c *gin.Context) {
 		return
 	}
 
-	err = env.userModel.AddFriend(userID, data.FriendID)
+	err = environment.Env.UserModel.AddFriend(userID, data.FriendID)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)
@@ -301,7 +302,7 @@ func RemoveFriend(c *gin.Context) {
 		return
 	}
 
-	err = env.userModel.RemoveFriend(userID, data.FriendID)
+	err = environment.Env.UserModel.RemoveFriend(userID, data.FriendID)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)
@@ -334,7 +335,7 @@ func FollowUser(c *gin.Context) {
 		return
 	}
 
-	err = env.userModel.FollowUser(userID, data.UserID)
+	err = environment.Env.UserModel.FollowUser(userID, data.UserID)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)

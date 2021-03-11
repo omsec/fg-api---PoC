@@ -26,9 +26,9 @@ type User struct {
 	EMailAddress string             `json:"eMail" bson:"eMail"`                 // unique
 	XBoxTag      string             `json:"XBoxTag" bson:"XBoxTag"`             // unique
 	LastSeenTS   []time.Time        `json:"lastSeen" bson:"lastSeen,omitempty"` // limited to 5 in DB-Query (setLastSeen)
-	Friends      []UserRef          `json:"friends" bson:"-"`                   // loaded from diff. collection
-	Following    []UserRef          `json:"following" bson:"-"`                 // loaded from diff. collection
-	Followers    []UserRef          `json:"followers" bson:"-"`                 // loaded from diff. collection
+	Friends      []UserRef          `json:"friends" bson:"-"`                   // loaded from diff. collection, at request
+	Following    []UserRef          `json:"following" bson:"-"`                 // loaded from diff. collection, at request
+	Followers    []UserRef          `json:"followers" bson:"-"`                 // loaded from diff. collection, at request
 	// ToDo: []LastPasswords - check for 90 days or 10 entries
 }
 
