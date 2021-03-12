@@ -24,6 +24,9 @@ func newEnv(client *mongo.Client) *Environment {
 
 	env.CourseModel.Client = client
 	env.CourseModel.Collection = client.Database(os.Getenv("DB_NAME")).Collection("racing") // ToDO: Const
+	// Funktionen aus dem User Model in's Course model "injecten"
+	env.CourseModel.GetUserName = env.UserModel.GetUserName
+	env.CourseModel.CredentialsReader = env.UserModel.GetCredentials
 
 	return env
 }
@@ -31,9 +34,9 @@ func newEnv(client *mongo.Client) *Environment {
 // Env is the singleton registry
 var Env *Environment
 
-// Initialize injects the database connection to the models
+// InitializeModels injects the database connection to the models
 // (do not confuse with package init)
-func Initialize() {
+func InitializeModels() {
 	/*env = &Env{
 	userModel: models.UserModel{Client: database.GetConnection()}}*/
 	Env = newEnv(database.GetConnection())

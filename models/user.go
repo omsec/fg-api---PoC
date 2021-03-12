@@ -34,7 +34,6 @@ type User struct {
 
 // Credentials is used for programmatic control
 // non-ptr values require annotations!
-// ToDO: move to Env
 type Credentials struct {
 	UserID       primitive.ObjectID
 	LoginName    string
@@ -141,7 +140,7 @@ func (m UserModel) GetUserByName(userName string) (*User, error) {
 	// ToDO: überlegen, ob hier die Friends etc. gelesen werden sollen - denke nicht nötig (getcredeitnaisl für prüfungen, sonst getProfile...?)
 
 	// add look-up texts
-	addLookups(&user)
+	m.addLookups(&user)
 
 	return &user, nil
 }
@@ -171,7 +170,7 @@ func (m UserModel) GetUserByID(ID string) (*User, error) {
 
 	// add look-up text
 	//user.RoleText = database.GetLookupText(lookups.LookupType(lookups.LTuserRole), user.RoleCode)
-	addLookups(&user)
+	m.addLookups(&user)
 
 	return &user, nil
 }
@@ -274,20 +273,19 @@ func (m UserModel) SetPassword(userID primitive.ObjectID, newPassword string) er
 }
 
 // GetCredentials returns account infos to control permissions and text-out (language)
-func (m UserModel) GetCredentials(UserID string) (*Credentials, error) {
+// any error is considered an anonymous user (visitor) to public items
+func (m UserModel) GetCredentials(UserID string, loadFriendlist bool) *Credentials {
 	var credentials Credentials
 
 	if UserID == "" {
-		credentials.UserID = primitive.NilObjectID
-		// anonymous (visitor) receives default role
-		credentials.RoleCode = lookups.UserRoleGuest
+		m.setDefaultProfile(&credentials)
 	} else {
 		// look-up credentials in database
 
 		// https://ildar.pro/golang-hints-create-mongodb-object-id-from-string/
 		id, err := primitive.ObjectIDFromHex(UserID)
 		if err != nil {
-			return nil, ErrInvalidUser
+			m.setDefaultProfile(&credentials)
 		}
 
 		fields := bson.D{
@@ -304,25 +302,26 @@ func (m UserModel) GetCredentials(UserID string) (*Credentials, error) {
 
 		err = m.Collection.FindOne(ctx, bson.M{"_id": id}, opts).Decode(&credentials)
 		if err != nil {
-			if err == mongo.ErrNoDocuments {
-				return nil, ErrInvalidUser
-			}
-			// pass any other error
-			return nil, helpers.WrapError(err, helpers.FuncName())
+			m.setDefaultProfile(&credentials)
 		}
-		credentials.UserID = id
+		credentials.UserID = id // not read again from DB ;-)
 
 		// friendlist ist referenced from its own collection, add it
-		credentials.Friends, err = m.GetFriends(UserID)
-		if err != nil {
-			// "no data/no friends" is not an error, other errors are already wrapped
-			if err != ErrNoData {
-				return nil, err
-			}
+		if loadFriendlist {
+			credentials.Friends, _ = m.GetFriends(UserID)
+			// error checking removed, since the user is already checked, even in case of an error
+			/*
+				if err != nil {
+					// "no data/no friends" is not an error, other errors lead to anonymous user
+					if err != ErrNoData {
+						m.setDefaultProfile(&credentials)
+					}
+				}
+			*/
 		}
 	}
 
-	return &credentials, nil
+	return &credentials
 }
 
 // GetFriends lists all friends of a user
@@ -358,20 +357,19 @@ func (m UserModel) BlockUser(userID string, blockedUserID string) error {
 		return ErrInvalidUser
 	}
 
-	// ToDo: Evtl. bessere Lösung um die userNamen zu lesen
-	userInfo, err := m.GetCredentials(userID)
+	userName, err := m.GetUserName(userID) // ToDo: Müsste eigentlich kein Error liefern
 	if err != nil {
 		return err
 	}
 
-	blockedUserInfo, err := m.GetCredentials(blockedUserID)
+	blockedUserInfo := m.GetCredentials(blockedUserID, false)
 	if err != nil {
 		return err
 	}
 
 	data := UserRef{
 		UserID:        userOID,
-		UserName:      userInfo.LoginName,
+		UserName:      userName,
 		ReferenceID:   blockedUserInfo.UserID,
 		ReferenceName: blockedUserInfo.LoginName,
 		ReferenceType: "user",
@@ -432,13 +430,12 @@ func (m UserModel) AddFriend(userID string, friendUserID string) error {
 		return ErrInvalidUser
 	}
 
-	// provisorisch
-	userInfo, err := m.GetCredentials(userID)
+	userName, err := m.GetUserName(userID)
 	if err != nil {
 		return err
 	}
 
-	friendInfo, err := m.GetCredentials(friendUserID)
+	friendInfo := m.GetCredentials(friendUserID, false)
 	if err != nil {
 		return err
 	}
@@ -447,7 +444,7 @@ func (m UserModel) AddFriend(userID string, friendUserID string) error {
 	// somit entfallen teure Transaktionen
 	data := UserRef{
 		UserID:        userOID,
-		UserName:      userInfo.LoginName,
+		UserName:      userName,
 		ReferenceID:   friendOID,
 		ReferenceName: friendInfo.LoginName,
 		ReferenceType: "user",
@@ -481,13 +478,12 @@ func (m UserModel) FollowUser(userID string, followUserID string) error {
 		return ErrInvalidUser
 	}
 
-	// provisorisch
-	userInfo, err := m.GetCredentials(userID)
+	userName, err := m.GetUserName(userID)
 	if err != nil {
 		return err
 	}
 
-	followInfo, err := m.GetCredentials(followUserID)
+	followInfo := m.GetCredentials(followUserID, false)
 	if err != nil {
 		return err
 	}
@@ -496,7 +492,7 @@ func (m UserModel) FollowUser(userID string, followUserID string) error {
 	// somit entfallen teure Transaktionen
 	data := UserRef{
 		UserID:        userOID,
-		UserName:      userInfo.LoginName,
+		UserName:      userName,
 		ReferenceID:   followOID,
 		ReferenceName: followInfo.LoginName,
 		ReferenceType: "user",
@@ -785,8 +781,16 @@ func (m UserModel) eMailExists(emailAddress string) (bool, error) {
 
 // internal helpers
 
+// this is used as the error handler of GetCredentials
+// any error of that function will be threated as an anonymous user, receiving the default credentials
+func (m UserModel) setDefaultProfile(credentials *Credentials) {
+	credentials.UserID = primitive.NilObjectID
+	credentials.RoleCode = lookups.UserRoleGuest
+	// ToDO: Lang passed via Browser
+}
+
 // actually that's not immutable, but ok here
-func addLookups(user *User) *User {
+func (m UserModel) addLookups(user *User) *User {
 	user.RoleText = database.GetLookupText(lookups.LookupType(lookups.LTuserRole), user.RoleCode)
 	user.LanguageText = database.GetLookupText(lookups.LookupType(lookups.LTlang), user.LanguageCode)
 

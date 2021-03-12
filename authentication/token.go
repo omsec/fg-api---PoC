@@ -55,7 +55,6 @@ func CreateTokens(c *gin.Context, userID string) error {
 	// Register Tokens
 	err = CreateAuth(userID, ts)
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
 
@@ -131,9 +130,15 @@ func DeleteAuths(tokenType string, userID string, currentUUID string) (int64, er
 			return 0, err
 		}
 
-		for _, v := range keys {
-			allKeys = append(allKeys, v)
-		}
+		// jede cursor iteration in die gesamtliste übernehmen
+		allKeys = append(allKeys, keys...)
+
+		/*
+			// spread operator entspricht dem hier
+			for _, v := range keys {
+				allKeys = append(allKeys, v)
+			}
+		*/
 
 		if cursor == 0 {
 			break

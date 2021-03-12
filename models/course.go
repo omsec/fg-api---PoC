@@ -82,13 +82,25 @@ type CourseSearchParams struct {
 	GameCode    int32
 	SeriesCodes []int32
 	SearchTerm  string
-	Credentials *Credentials
+	//Credentials *Credentials
 }
+
+/*
+type CredentialsReader interface {
+	GetCredentials(userId string) (*Credentials, error)
+}*/
 
 // CourseModel provides the logic to the interface and access to the database
 type CourseModel struct {
 	Client     *mongo.Client
 	Collection *mongo.Collection
+	// Gewisse Informationen kommen vom User-Model, die werden hier referenziert
+	// somit muss das nicht der Controller machen
+	GetUserName func(ID string) (string, error)
+	// ToDo: Mit/Ohne Friendlist;
+	// ToDo: halt umbennen GetCredentials
+	// ToDo: Statt Error anonymous profile liefern
+	CredentialsReader func(userId string, loadFriendlist bool) *Credentials
 }
 
 // Models do not change original values passed by the controllers, but return new structures
@@ -142,10 +154,17 @@ func (m CourseModel) ForzaSharingExists(sharingCode int32) (bool, error) {
 
 // CreateCourse adds a new route - validated by controller
 // ToDO: Rename "Add" ?
-func (m CourseModel) CreateCourse(course *Course) (string, error) {
+func (m CourseModel) CreateCourse(course *Course, userID string) (string, error) {
 
 	// set "system-fields"
 	course.ID = primitive.NewObjectID()
+	course.MetaInfo.CreatedID = ObjectID(userID)
+	userName, err := m.GetUserName(userID) // ToDo: Sollte direkt ObjhectID nehmen, 1 cast weniger
+	if err != nil {
+		// Fachlicher Fehler oder bereits wrapped
+		return "", err
+	}
+	course.MetaInfo.CreatedName = userName
 	course.MetaInfo.TouchedTS = time.Now()
 	course.MetaInfo.Rating = 0
 	course.MetaInfo.RecVer = 1
@@ -172,7 +191,7 @@ func (m CourseModel) CreateCourse(course *Course) (string, error) {
 }
 
 // SearchCourses lists or searches course (ohne Comments, aber mit Files/Tags)
-func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams) ([]CourseListItem, error) {
+func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams, userID string) ([]CourseListItem, error) {
 
 	// Verkleinerte/vereinfachte Struktur für Listen
 	// MongoDB muss eine passende Struktur erhalten um die Daten aufzunehmen (z. B. mit nested Arrays)
@@ -221,7 +240,9 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams) ([]CourseLis
 		courseTypes = append(courseTypes, lookups.CourseTypeCustom)
 	}
 
-	if searchSpecs.Credentials.RoleCode == lookups.UserRoleGuest {
+	credentials := m.CredentialsReader(userID, true)
+
+	if credentials.RoleCode == lookups.UserRoleGuest {
 		// anonymous visitors will only receive PUBLIC routes
 		if searchSpecs.SearchTerm == "" {
 			filter = bson.D{
@@ -254,8 +275,8 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams) ([]CourseLis
 		}
 	} else {
 		// if a user is logged-in, check their privilidges (must be Admin or Member)
-		//fmt.Printf("%s is logged in with role %v", searchSpecs.Credentials.LoginName, searchSpecs.Credentials.RoleCode)
-		if searchSpecs.Credentials.RoleCode == lookups.UserRoleAdmin {
+		//fmt.Printf("%s is logged in with role %v", credentials.LoginName, credentials.RoleCode)
+		if credentials.RoleCode == lookups.UserRoleAdmin {
 			// no visibility check needed for admins
 			if searchSpecs.SearchTerm == "" {
 				filter = bson.D{
@@ -289,8 +310,8 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams) ([]CourseLis
 			}
 		} else {
 			// check visibility
-			friendIDs := make([]primitive.ObjectID, len(searchSpecs.Credentials.Friends))
-			for i, friend := range searchSpecs.Credentials.Friends {
+			friendIDs := make([]primitive.ObjectID, len(credentials.Friends))
+			for i, friend := range credentials.Friends {
 				friendIDs[i] = friend.ReferenceID
 			}
 
@@ -307,7 +328,7 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams) ([]CourseLis
 					// visibility check
 					{Key: "$or", Value: bson.A{
 						bson.D{{Key: "visibilityCD", Value: 0}},
-						bson.D{{Key: "metaInfo.createdID", Value: searchSpecs.Credentials.UserID}},
+						bson.D{{Key: "metaInfo.createdID", Value: credentials.UserID}},
 						bson.D{{Key: "$and", Value: bson.A{
 							bson.D{{Key: "visibilityCD", Value: 1}},
 							bson.D{{Key: "metaInfo.createdID", Value: bson.D{{Key: "$in", Value: friendIDs}}}}, // nested doc for $in
@@ -327,7 +348,7 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams) ([]CourseLis
 					// visibility check
 					{Key: "$or", Value: bson.A{
 						bson.D{{Key: "visibilityCD", Value: 0}},
-						bson.D{{Key: "metaInfo.createdID", Value: searchSpecs.Credentials.UserID}},
+						bson.D{{Key: "metaInfo.createdID", Value: credentials.UserID}},
 						bson.D{{Key: "$and", Value: bson.A{
 							bson.D{{Key: "visibilityCD", Value: 1}},
 							bson.D{{Key: "metaInfo.createdID", Value: bson.D{{Key: "$in", Value: friendIDs}}}}, // nested doc for $in
@@ -396,7 +417,8 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams) ([]CourseLis
 }
 
 // GetCourse returns one
-func (m CourseModel) GetCourse(courseID string, credentials *Credentials) (*Course, error) {
+func (m CourseModel) GetCourse(courseID string, userID string) (*Course, error) {
+	//func (m CourseModel) GetCourse(courseID string, credentials *Credentials) (*Course, error) {
 
 	id, err := primitive.ObjectIDFromHex(courseID)
 	if err != nil {
@@ -414,6 +436,8 @@ func (m CourseModel) GetCourse(courseID string, credentials *Credentials) (*Cour
 		return nil, ErrNoData
 	}
 
+	credentials := m.CredentialsReader(userID, true)
+
 	err = GrantPermissions(data.VisibilityCode, data.MetaInfo.CreatedID, credentials)
 	if err != nil {
 		// no wrapping needed, since function returns app errors
@@ -426,7 +450,7 @@ func (m CourseModel) GetCourse(courseID string, credentials *Credentials) (*Cour
 }
 
 // UpdateCourse modifies a given course
-func (m CourseModel) UpdateCourse(course *Course, credentials *Credentials) error {
+func (m CourseModel) UpdateCourse(course *Course, userID string) error {
 
 	// read "metadata" to check permissions and perform optimistic locking
 	// könnte eigentlich ausgelagert werden
@@ -467,6 +491,8 @@ func (m CourseModel) UpdateCourse(course *Course, credentials *Credentials) erro
 			return ErrDenied
 		}
 	*/
+
+	credentials := m.CredentialsReader(userID, false)
 
 	// ToDO: GrantPermission für Course-Klasse erstellen
 	err = GrantPermissions(data.VisibilityCode, data.CreatedID, credentials)

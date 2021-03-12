@@ -41,16 +41,8 @@ func AddCourse(c *gin.Context) {
 		return
 	}
 
-	// ToDO: Evtl. vereinfachen mit Helpers
-	course.MetaInfo.CreatedID = models.ObjectID(userID)
-	course.MetaInfo.CreatedName, err = environment.Env.UserModel.GetUserName(userID)
-	if err != nil {
-		status, apiError := HandleError(err)
-		c.JSON(status, apiError)
-		return
-	}
-
-	id, err := environment.Env.CourseModel.CreateCourse(course)
+	// userID als Parameter, damit hier nicht DB-Spezifisches gebraucht wird (Mongo-OID)
+	id, err := environment.Env.CourseModel.CreateCourse(course, userID)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)
@@ -62,6 +54,7 @@ func AddCourse(c *gin.Context) {
 
 // ListCourses returns a list of racing tracks
 // format => http://localhost:3000/courses?searchMode=2&game=0&series=0&series=2&search=test
+// ToDo: 2 Endppoints machen (public & member) - gemeinsame Funktion im Modell bleibt
 func ListCourses(c *gin.Context) {
 
 	var apiError ErrorResponse
@@ -78,8 +71,8 @@ func ListCourses(c *gin.Context) {
 	// Service is public, however members receive more results (and do need to wait for another request)
 	userID, _ := authentication.Authenticate(c.Request)
 
-	var search *models.CourseSearchParams
-	search = new(models.CourseSearchParams)
+	//var search *models.CourseSearchParams
+	search := new(models.CourseSearchParams)
 
 	i, err := strconv.Atoi(c.Query("searchMode"))
 	if err != nil {
@@ -125,19 +118,21 @@ func ListCourses(c *gin.Context) {
 	// since models shouldn't open DB-connections on their own
 	// the user credentials are passed to it
 	// errors maybe ignored here and will be treated as anonymous user
-	search.Credentials, _ = environment.Env.UserModel.GetCredentials(userID)
+	// search.Credentials, _ = environment.Env.UserModel.GetCredentials(userID)
 
 	// use language submitted by client for anonymous users (rather than the one stored in database)
-	if userID == "" {
-		i, _ := strconv.Atoi(c.Request.Header.Get("Language")) // default 0, EN
-		search.Credentials.LanguageCode = int32(i)
-	}
+	/*
+		if userID == "" {
+			i, _ := strconv.Atoi(c.Request.Header.Get("Language")) // default 0, EN
+			search.Credentials.LanguageCode = int32(i)
+		}
+	*/
 
 	// nötig?
 	// searchTerm = strings.TrimSpace(data.SearchTerm)
 	// fmt.Println(data.SearchTerm)
 
-	courses, err := environment.Env.CourseModel.SearchCourses(search)
+	courses, err := environment.Env.CourseModel.SearchCourses(search, userID)
 	if err != nil {
 		// nothing found (not an error to the client)
 		if err == models.ErrNoData {
@@ -170,20 +165,21 @@ func GetCourse(c *gin.Context) {
 	*/
 
 	// no error checking because it's optional (public courses only)
+	// (no db access is made for empty string user names)
 	userID, _ := authentication.Authenticate(c.Request)
-	credentials, _ := environment.Env.UserModel.GetCredentials(userID)
 
-	// use language submitted by client for anonymous users (rather than the one stored in database)
-	if userID == "" {
-		i, _ := strconv.Atoi(c.Request.Header.Get("Language")) // default 0, EN
-		credentials.LanguageCode = int32(i)
-	}
+	// ToDO: use language submitted by client for anonymous users (rather than the one stored in database)
+	/*
+		if userID == "" {
+			i, _ := strconv.Atoi(c.Request.Header.Get("Language")) // default 0, EN
+			credentials.LanguageCode = int32(i)
+		}*/
 
 	// muss nicht auf null geprüft werden, denn ohne Parameter ist es eine andere Route (wie in Angular)
 	// typ wird automatisch gesetzt (kann aber STR sein)
 	var id = c.Param("id")
 
-	data, err = environment.Env.CourseModel.GetCourse(id, credentials)
+	data, err = environment.Env.CourseModel.GetCourse(id, userID)
 	if err != nil {
 		switch err {
 		// record not found is not an error to the client here
@@ -215,7 +211,7 @@ func UpdateCourse(c *gin.Context) {
 		return
 	}
 
-	credentials, _ := environment.Env.UserModel.GetCredentials(userID)
+	// credentials, _ := environment.Env.UserModel.GetCredentials(userID)
 
 	// ToDo: Evtl. eigene data struct machen, da RecVer vorhanden sein muss
 	// fehlend != 0
@@ -252,7 +248,7 @@ func UpdateCourse(c *gin.Context) {
 		}
 	*/
 
-	err = environment.Env.CourseModel.UpdateCourse(course, credentials)
+	err = environment.Env.CourseModel.UpdateCourse(course, userID)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)

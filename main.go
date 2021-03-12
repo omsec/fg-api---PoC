@@ -120,8 +120,8 @@ func main() {
 	}
 	defer database.CloseConnection()
 
-	// Initialize the Models
-	environment.Initialize()
+	// Inject DB-Connections to models
+	environment.InitializeModels()
 
 	fmt.Println("Forza-Garage running...")
 	handleRequests()

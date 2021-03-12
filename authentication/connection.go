@@ -19,8 +19,8 @@ var client *redis.Client
 func OpenConnection() error {
 	var err error
 
-	var dsn string
-	dsn = os.Getenv("CACHE_HOST") + ":" + os.Getenv("CACHE_PORT")
+	//var dsn string
+	dsn := os.Getenv("CACHE_HOST") + ":" + os.Getenv("CACHE_PORT")
 
 	dbID, err := strconv.Atoi(os.Getenv("JWT_DB"))
 	if err != nil {
