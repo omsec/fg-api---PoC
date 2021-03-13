@@ -52,24 +52,16 @@ func AddCourse(c *gin.Context) {
 	c.JSON(http.StatusCreated, Created{id})
 }
 
-// ListCourses returns a list of racing tracks
-// format => http://localhost:3000/courses?searchMode=2&game=0&series=0&series=2&search=test
-// ToDo: 2 Endppoints machen (public & member) - gemeinsame Funktion im Modell bleibt
-func ListCourses(c *gin.Context) {
+// ListCoursesPublic returns a list of racing tracks
+// format => http://localhost:3000/courses/public?searchMode=2&game=0&series=0&series=2&search=test
+func ListCoursesPublic(c *gin.Context) {
 
 	var apiError ErrorResponse
 
-	/*apiError.Code = InvalidJSON
-	apiError.Message = apiError.String(apiError.Code)
-	c.JSON(http.StatusUnprocessableEntity, apiError)
-	return
-
-	/*c.Status(http.StatusInternalServerError)
-	return*/
-
 	// Error maybe ignored here
-	// Service is public, however members receive more results (and do need to wait for another request)
-	userID, _ := authentication.Authenticate(c.Request)
+	// no user available/needed for the public service.
+	// the model will assign the default profile/role to it, without the need of a DB access
+	userID := ""
 
 	//var search *models.CourseSearchParams
 	search := new(models.CourseSearchParams)
@@ -92,6 +84,7 @@ func ListCourses(c *gin.Context) {
 	}
 	search.GameCode = int32(i)
 
+	// variable wiederholt sich einfach im url
 	series := c.QueryArray("series")
 	if series == nil {
 		apiError.Code = InvalidJSON
@@ -113,13 +106,9 @@ func ListCourses(c *gin.Context) {
 		return
 	}
 
-	// variable wiederholt sich einfach im url
 	search.SearchTerm = c.Query("search")
-	// since models shouldn't open DB-connections on their own
-	// the user credentials are passed to it
-	// errors maybe ignored here and will be treated as anonymous user
-	// search.Credentials, _ = environment.Env.UserModel.GetCredentials(userID)
 
+	// ToDo: Lang
 	// use language submitted by client for anonymous users (rather than the one stored in database)
 	/*
 		if userID == "" {
@@ -148,8 +137,102 @@ func ListCourses(c *gin.Context) {
 	c.JSON(http.StatusOK, courses)
 }
 
-// GetCourse returns the specified track
-func GetCourse(c *gin.Context) {
+// ListCoursesMember returns a list of racing tracks for logged-in users
+// format => http://localhost:3000/courses/member?searchMode=2&game=0&series=0&series=2&search=test
+func ListCoursesMember(c *gin.Context) {
+
+	var apiError ErrorResponse
+
+	/*apiError.Code = InvalidJSON
+	apiError.Message = apiError.String(apiError.Code)
+	c.JSON(http.StatusUnprocessableEntity, apiError)
+	return
+
+	/*c.Status(http.StatusInternalServerError)
+	return*/
+
+	userID, err := authentication.Authenticate(c.Request)
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	//var search *models.CourseSearchParams
+	search := new(models.CourseSearchParams)
+
+	i, err := strconv.Atoi(c.Query("searchMode"))
+	if err != nil {
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	}
+	search.SearchMode = i
+
+	i, err = strconv.Atoi(c.Query("game"))
+	if err != nil {
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	}
+	search.GameCode = int32(i)
+
+	// variable wiederholt sich einfach im url
+	series := c.QueryArray("series")
+	if series == nil {
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	}
+	for _, str := range series {
+		i, err = strconv.Atoi(str)
+		// ignore invalid codes
+		if err == nil {
+			search.SeriesCodes = append(search.SeriesCodes, int32(i))
+		}
+	}
+	if search.SeriesCodes == nil {
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	}
+
+	search.SearchTerm = c.Query("search")
+
+	// ToDo: Language
+	// use language submitted by client for anonymous users (rather than the one stored in database)
+	/*
+		if userID == "" {
+			i, _ := strconv.Atoi(c.Request.Header.Get("Language")) // default 0, EN
+			search.Credentials.LanguageCode = int32(i)
+		}
+	*/
+
+	// nötig?
+	// searchTerm = strings.TrimSpace(data.SearchTerm)
+	// fmt.Println(data.SearchTerm)
+
+	courses, err := environment.Env.CourseModel.SearchCourses(search, userID)
+	if err != nil {
+		// nothing found (not an error to the client)
+		if err == models.ErrNoData {
+			c.Status(http.StatusNoContent)
+			return
+		}
+		// technical errors
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
+		return
+	}
+
+	c.JSON(http.StatusOK, courses)
+}
+
+// GetCoursePublic returns the specified track
+func GetCoursePublic(c *gin.Context) {
 
 	var (
 		err  error
@@ -164,9 +247,8 @@ func GetCourse(c *gin.Context) {
 		return
 	*/
 
-	// no error checking because it's optional (public courses only)
-	// (no db access is made for empty string user names)
-	userID, _ := authentication.Authenticate(c.Request)
+	// no user available/required for the public service
+	userID := ""
 
 	// ToDO: use language submitted by client for anonymous users (rather than the one stored in database)
 	/*
@@ -176,7 +258,55 @@ func GetCourse(c *gin.Context) {
 		}*/
 
 	// muss nicht auf null geprüft werden, denn ohne Parameter ist es eine andere Route (wie in Angular)
-	// typ wird automatisch gesetzt (kann aber STR sein)
+	// typ wird automatisch gesetzt (hier STR, könnte auch numerisch sein)
+	var id = c.Param("id")
+
+	data, err = environment.Env.CourseModel.GetCourse(id, userID)
+	if err != nil {
+		switch err {
+		// record not found is not an error to the client here
+		case models.ErrNoData:
+			c.Status(http.StatusNoContent)
+		default:
+			status, apiError := HandleError(err)
+			c.JSON(status, apiError)
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, data)
+}
+
+func GetCourseMember(c *gin.Context) {
+
+	var (
+		err  error
+		data *models.Course
+	)
+
+	/*
+		var apiError ErrorResponse
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	*/
+
+	userID, err := authentication.Authenticate(c.Request)
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	// ToDO: use language submitted by client for anonymous users (rather than the one stored in database)
+	/*
+		if userID == "" {
+			i, _ := strconv.Atoi(c.Request.Header.Get("Language")) // default 0, EN
+			credentials.LanguageCode = int32(i)
+		}*/
+
+	// muss nicht auf null geprüft werden, denn ohne Parameter ist es eine andere Route (wie in Angular)
+	// typ wird automatisch gesetzt (hier STR, könnte auch numerisch sein)
 	var id = c.Param("id")
 
 	data, err = environment.Env.CourseModel.GetCourse(id, userID)
@@ -210,11 +340,6 @@ func UpdateCourse(c *gin.Context) {
 		c.Status(http.StatusUnauthorized)
 		return
 	}
-
-	// credentials, _ := environment.Env.UserModel.GetCredentials(userID)
-
-	// ToDo: Evtl. eigene data struct machen, da RecVer vorhanden sein muss
-	// fehlend != 0
 
 	// use "shouldBind" not all fields are required in this context (eg. MetaInfo.recVer is requred)
 	if err = c.ShouldBindJSON(&data); err != nil {

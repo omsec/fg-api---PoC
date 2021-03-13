@@ -66,24 +66,16 @@ func handleRequests() {
 	// course
 	// GET hat keinen BODY (Go/Gin & Postman unterstützen das zwar, Angular nicht) - deshalb Parameter
 	// https://xspdf.com/resolution/58530870.html
-	router.GET("/courses", controllers.ListCourses)
-	router.GET("/courses/:id", controllers.GetCourse)
+	router.GET("/courses/public", controllers.ListCoursesPublic)
+	router.GET("/courses/member", authentication.TokenAuthMiddleware(), controllers.ListCoursesMember)
+	router.GET("/courses/public/:id", controllers.GetCoursePublic)
+	router.GET("/courses/member/:id", authentication.TokenAuthMiddleware(), controllers.GetCourseMember)
 	router.POST("/courses", authentication.TokenAuthMiddleware(), controllers.AddCourse)
 	router.PUT("/courses/:id", authentication.TokenAuthMiddleware(), controllers.UpdateCourse)
 	// ToDO: Delete
 
+	// logics
 	router.POST("/course/exists", authentication.TokenAuthMiddleware(), controllers.ExistsForzaShare) // protected to prevent sniffs ;-)
-
-	/*
-		URL scheme:
-		router.GET("/courses", controllers.ListCourses) 200 | 204
-		router.GET("/courses/:id", controllers.GetCourse) 200 | 204
-		router.POST("/courses", authentication.TokenAuthMiddleware(), controllers.AddCourse) 201 | 422 | (permission)
-		router.PUT("/courses/:id", authentication.TokenAuthMiddleware(), controllers.UpdateCourse) 200 | 422
-		router.DELETE("/courses/:id", authentication.TokenAuthMiddleware(), controllers.UpdateCourse) 200 | 422
-		// logics (domain-singular/verb)
-		router.POST("/courses/exists", authentication.TokenAuthMiddleware(), controllers.ExistsForzaShare) // protected to prevent sniffs ;-)
-	*/
 
 	switch os.Getenv("APP_ENV") {
 	case "DEV":
