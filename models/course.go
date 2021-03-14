@@ -97,9 +97,7 @@ type CourseModel struct {
 	// Gewisse Informationen kommen vom User-Model, die werden hier referenziert
 	// somit muss das nicht der Controller machen
 	GetUserName func(ID string) (string, error)
-	// ToDo: Mit/Ohne Friendlist;
 	// ToDo: halt umbennen GetCredentials
-	// ToDo: Statt Error anonymous profile liefern
 	CredentialsReader func(userId string, loadFriendlist bool) *Credentials
 }
 
@@ -226,7 +224,8 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams, userID strin
 	i, _ := strconv.Atoi(searchSpecs.SearchTerm)
 
 	// construct a document containing the search parameters
-	filter := bson.D{}
+	// filter := bson.D{}
+	var filter bson.D
 
 	// build IN-List of course types
 	var courseTypes []int32

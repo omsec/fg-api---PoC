@@ -546,6 +546,7 @@ func (m UserModel) removeReference(userRef UserRef) error {
 }
 
 // private proc to read relations/referenced documents, such as friends
+// ToDO: Intenre funktion allenfalls mit OID statt STR-ID
 func (m UserModel) getReferences(userID string, relationType string) ([]UserRef, error) {
 	// TODO: Validate inparams
 
@@ -713,7 +714,8 @@ func GrantPermissions(itemVisibilityCode int32, itemCreatorID primitive.ObjectID
 		return ErrGuest
 	}
 
-	if (itemVisibilityCode == lookups.VisibilityMembers) && (UserReferenced(credentials.Friends, itemCreatorID) == false) && (itemCreatorID != credentials.UserID) {
+	// if (itemVisibilityCode == lookups.VisibilityMembers) && (UserReferenced(credentials.Friends, itemCreatorID) == false) && (itemCreatorID != credentials.UserID) {
+	if (itemVisibilityCode == lookups.VisibilityMembers) && (!UserReferenced(credentials.Friends, itemCreatorID)) && (itemCreatorID != credentials.UserID) {
 		// make friends with them
 		return ErrNotFriend
 	}
