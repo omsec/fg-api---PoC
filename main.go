@@ -9,6 +9,8 @@ import (
 	"forza-garage/middleware"
 	"log"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -63,6 +65,10 @@ func handleRequests() {
 
 	router.GET("/users/:id/followers", authentication.TokenAuthMiddleware(), controllers.GetFollowers)
 
+	// analytics
+	router.GET("/stats/visits", controllers.GetVisits)
+	router.GET("/stats/visitors", authentication.TokenAuthMiddleware(), controllers.ListVisitors)
+
 	// course
 	// GET hat keinen BODY (Go/Gin & Postman unterstützen das zwar, Angular nicht) - deshalb Parameter
 	// https://xspdf.com/resolution/58530870.html
@@ -110,11 +116,36 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer database.CloseConnection()
+	defer database.CloseRedisConnection()
 
 	// Inject DB-Connections to models
 	environment.InitializeModels()
 
+	// replicate profile visit log from cache to db
+	replMins, err := strconv.Atoi(os.Getenv("ANALYTICS_REPLICATION_MINUTES"))
+	if err != nil {
+		log.Fatal("Invalid Configuration for env-Value ANALYTICS_REPLICATION_MINUTES")
+	}
+	ticker := time.NewTicker(time.Duration(replMins) * time.Minute)
+	done := make(chan bool, 1)
+
+	if os.Getenv("USE_ANALYTICS") == "YES" {
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				//case t := <-ticker.C:
+				case <-ticker.C:
+					environment.Env.Tracker.Replicate()
+				}
+			}
+		}()
+	}
+
 	fmt.Println("Forza-Garage running...")
 	handleRequests()
+
+	ticker.Stop()
+	done <- true
 }

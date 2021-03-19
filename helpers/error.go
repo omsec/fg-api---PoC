@@ -16,6 +16,7 @@ func (se *SystemError) Error() string {
 // WrapError lets the caller add context information to another error
 // (eg. after receiving a DB error)
 func WrapError(err error, info string) *SystemError {
+	fmt.Println(err) // ToDo: Log
 	return &SystemError{
 		Context: info,
 		Err:     err,

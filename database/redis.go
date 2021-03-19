@@ -39,6 +39,11 @@ func OpenRedisConnection() error {
 	return nil
 }
 
+// GetConnection returns a reference to the shared connection
+func GetRedisConnection() *redis.Client {
+	return redisClient
+}
+
 // CloseRedisConnection closes the connection to the store
 func CloseRedisConnection() error {
 	return redisClient.Close()

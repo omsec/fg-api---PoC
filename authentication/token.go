@@ -153,7 +153,7 @@ func DeleteAuths(tokenType string, userID string, currentUUID string) (int64, er
 
 		val, err := client.Get(ctx, v).Result()
 		if err != nil {
-			panic(err)
+			return 0, err // panic, abbrechen
 		}
 
 		if val == userID {

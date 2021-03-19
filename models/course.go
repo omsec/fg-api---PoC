@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"fmt"
+	"forza-garage/analytics"
 	"forza-garage/database"
 	"forza-garage/helpers"
 	"forza-garage/lookups"
@@ -99,6 +100,7 @@ type CourseModel struct {
 	GetUserName func(ID string) (string, error)
 	// ToDo: halt umbennen GetCredentials
 	CredentialsReader func(userId string, loadFriendlist bool) *Credentials
+	Tracker           *analytics.Tracker
 }
 
 // Models do not change original values passed by the controllers, but return new structures
@@ -423,6 +425,8 @@ func (m CourseModel) GetCourse(courseID string, userID string) (*Course, error) 
 	if err != nil {
 		return nil, ErrNoData
 	}
+
+	m.Tracker.SaveVisitor("course", courseID, userID)
 
 	data := Course{}
 
