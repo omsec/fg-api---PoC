@@ -30,6 +30,7 @@ type User struct {
 	Following    []UserRef          `json:"following" bson:"-"`                 // loaded from diff. collection, at request
 	Followers    []UserRef          `json:"followers" bson:"-"`                 // loaded from diff. collection, at request
 	// ToDo: []LastPasswords - check for 90 days or 10 entries
+	// ToDo: joined json only - extracted from oid
 }
 
 // Credentials is used for programmatic control
@@ -196,6 +197,35 @@ func (m UserModel) GetUserName(ID string) (string, error) {
 		{Key: "loginName", Value: 1}}
 
 	err = m.Collection.FindOne(ctx, bson.M{"_id": id}, options.FindOne().SetProjection(fields)).Decode(&data)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return "", ErrInvalidUser
+		}
+		// pass any other error
+		return "", helpers.WrapError(err, helpers.FuncName())
+
+	}
+
+	return data.LoginName, nil
+}
+
+// GetUserNameOID returns the login name from an OID (reduced version, without profile data)
+// this is used to avoid casting when an OID is already present
+func (m UserModel) GetUserNameOID(userID primitive.ObjectID) (string, error) {
+
+	data := struct {
+		//ID        primitive.ObjectID `bson:"_id"`
+		LoginName string `bson:"loginName"`
+	}{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel() // nach 10 Sekunden abbrechen
+
+	fields := bson.D{
+		{Key: "_id", Value: 0}, // _id kommt immer, ausser es wird explizit ausgeschlossen (0)
+		{Key: "loginName", Value: 1}}
+
+	err := m.Collection.FindOne(ctx, bson.M{"_id": userID}, options.FindOne().SetProjection(fields)).Decode(&data)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return "", ErrInvalidUser

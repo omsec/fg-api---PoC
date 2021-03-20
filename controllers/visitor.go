@@ -38,7 +38,6 @@ func GetVisits(c *gin.Context) {
 		//startDT = time.Date(startDT.Year(), startDT.Month(), startDT.Day(), 0, 0, 0, 0, startDT.Location())
 		startDT = time.Date(startDT.Year(), startDT.Month(), startDT.Day(), 0, 0, 0, 0, startDT.UTC().Location())
 	} else {
-		fmt.Println(startStr)
 		// https://forum.golangbridge.org/t/convert-string-to-date-in-yyyy-mm-dd-format/6026/2
 		startDT, err = time.Parse("2006-01-02", startStr) // seems magic date
 		if err != nil {

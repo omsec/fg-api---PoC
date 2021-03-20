@@ -18,9 +18,10 @@ import (
 )
 
 type Tracker struct {
-	redisClient *redis.Client
-	collection  *mongo.Collection
-	GetUserName func(ID string) (string, error)
+	redisClient    *redis.Client
+	collection     *mongo.Collection
+	GetUserName    func(ID string) (string, error)
+	GetUserNameOID func(userID primitive.ObjectID) (string, error)
 }
 
 // VisitCache is the list item in the cache (redis)
@@ -36,7 +37,7 @@ type Visit struct {
 	VisitTS    time.Time          `json:"visitTS" bson:"visitTS"`
 	ObjectType string             `json:"-" bson:"objectType"`
 	ObjectID   primitive.ObjectID `json:"-" bson:"objectID"`
-	UserID     primitive.ObjectID `json:"-" bson:"userID,omitempty"`
+	UserID     primitive.ObjectID `json:"userID" bson:"userID,omitempty"`
 	UserName   string             `json:"userName" bson:"userName,omitempty"`
 }
 
@@ -137,27 +138,43 @@ func (t *Tracker) ListVisitors(objectID string, startDT time.Time, userID string
 		return nil, nil
 	}
 
+	// 1. look for "hot" data in cache (which is not yet replicated) - optional
+	// currently NOT intended
+
 	oid, err := primitive.ObjectIDFromHex(objectID)
 	if err != nil {
 		return nil, helpers.WrapError(err, helpers.FuncName())
 	}
 
 	// https://www.mongodb.com/blog/post/quick-start-golang--mongodb--data-aggregation-pipeline
+	// https://docs.mongodb.com/manual/core/aggregation-pipeline/index.html
 	// https://docs.mongodb.com/manual/reference/operator/aggregation/max/
 
-	// build list select max(visitTS), userName group by userName order by maxTS desc, limit 10
+	// build list select max(visitTS), userName where oid=X and visitTS>=Y group by userName order by maxTS desc, limit 10
 
-	// 1. get data from MongoDB
-	// ToDo: Limit 10!
-	matchStage := bson.D{{Key: "$match", Value: bson.D{{Key: "objectID", Value: oid}}}}
+	// 2. get data from MongoDB
+	// https://docs.mongodb.com/manual/reference/operator/aggregation-pipeline/#aggregation-pipeline-operator-reference
+	//matchStage := bson.D{{Key: "$match", Value: bson.D{{Key: "objectID", Value: oid}}}}
+	matchStage := bson.D{
+		{Key: "$match", Value: bson.D{
+			{Key: "$and", Value: bson.A{
+				bson.D{{Key: "objectID", Value: oid}},
+				bson.D{{Key: "visitTS", Value: bson.D{
+					{Key: "$gte", Value: startDT},
+				}}},
+			}},
+		}},
+	}
+
 	groupStage := bson.D{
 		{Key: "$group", Value: bson.D{
-			{Key: "_id", Value: "$userName"},
+			{Key: "_id", Value: "$userID"},
 			{Key: "lastVisit", Value: bson.D{
 				{Key: "$max", Value: "$visitTS"},
 			},
 			}},
 		}}
+	// Resulat am Schluss sortieren und limitieren
 	sortStage := bson.D{{Key: "$sort", Value: bson.D{{Key: "lastVisit", Value: -1}}}} // desc
 	limitStage := bson.D{{Key: "$limit", Value: 5}}
 
@@ -168,7 +185,11 @@ func (t *Tracker) ListVisitors(objectID string, startDT time.Time, userID string
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel() // nach 10 Sekunden abbrechen
 
-	cursor, err := t.collection.Aggregate(ctx, mongo.Pipeline{matchStage, groupStage, sortStage, limitStage}, opts)
+	cursor, err := t.collection.Aggregate(ctx, mongo.Pipeline{
+		matchStage,
+		groupStage,
+		sortStage,
+		limitStage}, opts)
 	if err != nil {
 		return nil, helpers.WrapError(err, helpers.FuncName())
 	}
@@ -189,15 +210,18 @@ func (t *Tracker) ListVisitors(objectID string, startDT time.Time, userID string
 	for _, v := range visitsDB {
 		mts := v["lastVisit"].(primitive.DateTime)
 		visit.VisitTS = mts.Time()
-		if v["_id"] != nil {
-			visit.UserName = v["_id"].(string)
+		if v["_id"] == nil {
+			visit.UserID = primitive.NilObjectID
+			visit.UserName = ""
+		} else {
+			visit.UserID = v["_id"].(primitive.ObjectID)
+			visit.UserName, _ = t.GetUserNameOID(v["_id"].(primitive.ObjectID))
+			//visit.UserName = v["_id"].(string)
 		}
 
 		visits = append(visits, visit)
 		//fmt.Println(v["_id"])
 	}
-
-	// 2. look for "hot" data in cache (which is not yet replicated)
 
 	return visits, nil
 }

@@ -158,6 +158,7 @@ func (m CourseModel) CreateCourse(course *Course, userID string) (string, error)
 
 	// set "system-fields"
 	course.ID = primitive.NewObjectID()
+	// course.MetaInfo.CreatedTS set by ID via OID
 	course.MetaInfo.CreatedID = ObjectID(userID)
 	userName, err := m.GetUserName(userID) // ToDo: Sollte direkt ObjhectID nehmen, 1 cast weniger
 	if err != nil {
@@ -438,6 +439,8 @@ func (m CourseModel) GetCourse(courseID string, userID string) (*Course, error) 
 	if err != nil {
 		return nil, ErrNoData
 	}
+	// extract creation timestamp from OID
+	data.MetaInfo.CreatedTS = primitive.ObjectID(id).Timestamp()
 
 	credentials := m.CredentialsReader(userID, true)
 
