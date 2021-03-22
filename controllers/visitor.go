@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"fmt"
+	"forza-garage/analytics"
 	"forza-garage/authentication"
 	"forza-garage/environment"
 	"net/http"
@@ -115,10 +116,14 @@ func ListVisitors(c *gin.Context) {
 
 	visitors, err := environment.Env.Tracker.ListVisitors(id, startDT, userID)
 	if err != nil {
-		fmt.Println(err)
-		apiError.Code = InvalidRequest // ToDO: evtl. intServ oder genauer
-		apiError.Message = apiError.String(apiError.Code)
-		c.JSON(http.StatusUnprocessableEntity, apiError)
+		// nothing found (not an error to the client)
+		if err == analytics.ErrNoData {
+			c.Status(http.StatusNoContent)
+			return
+		}
+		// technical errors
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
 		return
 	}
 

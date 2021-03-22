@@ -6,6 +6,7 @@ import (
 
 // generic custom error types
 // specific errors go to the respective file of the model package
+// ToDO: Generic Errors in AppError-Package & Eror-Type definieren
 var (
 	ErrNoData          = errors.New("no records found")
 	ErrMultipleRecords = errors.New("mulitple records found")

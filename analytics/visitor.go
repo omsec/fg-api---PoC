@@ -3,6 +3,7 @@ package analytics
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"forza-garage/helpers"
 	"os"
@@ -40,6 +41,12 @@ type Visit struct {
 	UserID     primitive.ObjectID `json:"userID" bson:"userID,omitempty"`
 	UserName   string             `json:"userName" bson:"userName,omitempty"`
 }
+
+// Provisorisch
+// ToDo: In AppError-Package, typisiert
+var (
+	ErrNoData = errors.New("no records found")
+)
 
 func (t *Tracker) SetConnections(redisClient *redis.Client, mongoCollection *mongo.Collection) {
 	t.redisClient = redisClient
@@ -197,6 +204,11 @@ func (t *Tracker) ListVisitors(objectID string, startDT time.Time, userID string
 	var visitsDB []bson.M
 	if err = cursor.All(ctx, &visitsDB); err != nil {
 		return nil, helpers.WrapError(err, helpers.FuncName())
+	}
+
+	// check for empty result set (no error raised by find)
+	if visitsDB == nil {
+		return nil, ErrNoData
 	}
 
 	// MDB-TS->GoTime
