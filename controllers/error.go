@@ -3,6 +3,7 @@ package controllers
 import (
 	"errors"
 	"fmt"
+	"forza-garage/apperror"
 	"forza-garage/models"
 	"net/http"
 )
@@ -35,28 +36,28 @@ func HandleError(err error) (httpStatus int, apiError ErrorResponse) {
 	fmt.Println(err)
 	switch err {
 	// system
-	case models.ErrMultipleRecords:
+	case apperror.ErrMultipleRecords:
 		apiError.Code = MultipleRecords
 		apiError.Message = apiError.String(apiError.Code)
 		httpStatus = http.StatusInternalServerError // Datenfehler auf dem Server, Client "crashen" lassen ("something went wrong")
-	case models.ErrRecordChanged:
+	case apperror.ErrRecordChanged:
 		apiError.Code = RecordChanged
 		apiError.Message = apiError.String(apiError.Code)
 		httpStatus = http.StatusUnprocessableEntity
 	// permissions
-	case models.ErrGuest:
+	case apperror.ErrGuest:
 		apiError.Code = PermissionGuest
 		apiError.Message = apiError.String(apiError.Code)
 		httpStatus = http.StatusUnprocessableEntity
-	case models.ErrNotFriend:
+	case apperror.ErrNotFriend:
 		apiError.Code = PermissionNotShared
 		apiError.Message = apiError.String(apiError.Code)
 		httpStatus = http.StatusUnprocessableEntity
-	case models.ErrPrivate:
+	case apperror.ErrPrivate:
 		apiError.Code = PermissionPrivate
 		apiError.Message = apiError.String(apiError.Code)
 		httpStatus = http.StatusUnprocessableEntity
-	case models.ErrDenied:
+	case apperror.ErrDenied:
 		apiError.Code = ActionDenied
 		apiError.Message = apiError.String(apiError.Code)
 		httpStatus = http.StatusUnprocessableEntity

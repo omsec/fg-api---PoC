@@ -1,9 +1,9 @@
 package controllers
 
 import (
+	"forza-garage/apperror"
 	"forza-garage/authentication"
 	"forza-garage/environment"
-	"forza-garage/models"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -76,7 +76,7 @@ func GetUser(c *gin.Context) {
 	user, err := environment.Env.UserModel.GetUserByID(c.Param("id"))
 	if err != nil {
 		// nothing found (not an error to the client)
-		if err == models.ErrNoData {
+		if err == apperror.ErrNoData {
 			c.Status(http.StatusNoContent)
 			return
 		}
@@ -172,7 +172,7 @@ func GetFriends(c *gin.Context) {
 	friends, err := environment.Env.UserModel.GetFriends(c.Param("id"))
 	if err != nil {
 		// nothing found (not an error to the client)
-		if err == models.ErrNoData {
+		if err == apperror.ErrNoData {
 			c.Status(http.StatusNoContent)
 			return
 		}
@@ -201,7 +201,7 @@ func GetFollowings(c *gin.Context) {
 	friends, err := environment.Env.UserModel.GetFollowings(c.Param("id"))
 	if err != nil {
 		// nothing found (not an error to the client)
-		if err == models.ErrNoData {
+		if err == apperror.ErrNoData {
 			c.Status(http.StatusNoContent)
 			return
 		}
@@ -230,7 +230,7 @@ func GetFollowers(c *gin.Context) {
 	followers, err := environment.Env.UserModel.GetFollowers(c.Param("id"))
 	if err != nil {
 		// nothing found (not an error to the client)
-		if err == models.ErrNoData {
+		if err == apperror.ErrNoData {
 			c.Status(http.StatusNoContent)
 			return
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"forza-garage/analytics"
+	"forza-garage/apperror"
 	"forza-garage/database"
 	"forza-garage/helpers"
 	"forza-garage/lookups"
@@ -384,7 +385,7 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams, userID strin
 
 	// check for empty result set (no error raised by find)
 	if courses == nil {
-		return nil, ErrNoData
+		return nil, apperror.ErrNoData
 	}
 
 	// copy data to reduced list-struct
@@ -424,7 +425,7 @@ func (m CourseModel) GetCourse(courseID string, userID string) (*Course, error) 
 
 	id, err := primitive.ObjectIDFromHex(courseID)
 	if err != nil {
-		return nil, ErrNoData
+		return nil, apperror.ErrNoData
 	}
 
 	m.Tracker.SaveVisitor("course", courseID, userID)
@@ -437,7 +438,7 @@ func (m CourseModel) GetCourse(courseID string, userID string) (*Course, error) 
 	// später vielleicht project() wenn's zu viele felder werden (excl. nested oder sowas)
 	err = m.Collection.FindOne(ctx, bson.M{"_id": id}).Decode(&data)
 	if err != nil {
-		return nil, ErrNoData
+		return nil, apperror.ErrNoData
 	}
 	// extract creation timestamp from OID
 	data.MetaInfo.CreatedTS = primitive.ObjectID(id).Timestamp()
@@ -485,7 +486,7 @@ func (m CourseModel) UpdateCourse(course *Course, userID string) error {
 	err := m.Collection.FindOne(ctx, filter, options.FindOne().SetProjection(fields)).Decode(&data)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			return ErrNoData // document might have been deleted
+			return apperror.ErrNoData // document might have been deleted
 		}
 		// pass any other error
 		return helpers.WrapError(err, helpers.FuncName())
@@ -511,7 +512,7 @@ func (m CourseModel) UpdateCourse(course *Course, userID string) error {
 	// optimistic lock check
 	if data.MetaInfo.RecVer != course.MetaInfo.RecVer {
 		// document was changed by another user since last read
-		return ErrRecordChanged
+		return apperror.ErrRecordChanged
 	}
 
 	// ToDO: einzel-upd wohl besser, oder gar replace?
@@ -552,7 +553,7 @@ func (m CourseModel) UpdateCourse(course *Course, userID string) error {
 	}
 
 	if result.MatchedCount == 0 {
-		return ErrNoData // document might have been deleted
+		return apperror.ErrNoData // document might have been deleted
 	}
 
 	// ToDO: überlegen - rückgsabewerte sinnvoll? (z. B. timestamp? oder die ID analog add?)

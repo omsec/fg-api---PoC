@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"forza-garage/apperror"
 	"forza-garage/authentication"
 	"forza-garage/environment"
 	"forza-garage/models"
@@ -124,7 +125,7 @@ func ListCoursesPublic(c *gin.Context) {
 	courses, err := environment.Env.CourseModel.SearchCourses(search, userID)
 	if err != nil {
 		// nothing found (not an error to the client)
-		if err == models.ErrNoData {
+		if err == apperror.ErrNoData {
 			c.Status(http.StatusNoContent)
 			return
 		}
@@ -218,7 +219,7 @@ func ListCoursesMember(c *gin.Context) {
 	courses, err := environment.Env.CourseModel.SearchCourses(search, userID)
 	if err != nil {
 		// nothing found (not an error to the client)
-		if err == models.ErrNoData {
+		if err == apperror.ErrNoData {
 			c.Status(http.StatusNoContent)
 			return
 		}
@@ -265,7 +266,7 @@ func GetCoursePublic(c *gin.Context) {
 	if err != nil {
 		switch err {
 		// record not found is not an error to the client here
-		case models.ErrNoData:
+		case apperror.ErrNoData:
 			c.Status(http.StatusNoContent)
 		default:
 			status, apiError := HandleError(err)
@@ -313,7 +314,7 @@ func GetCourseMember(c *gin.Context) {
 	if err != nil {
 		switch err {
 		// record not found is not an error to the client here
-		case models.ErrNoData:
+		case apperror.ErrNoData:
 			c.Status(http.StatusNoContent)
 		default:
 			status, apiError := HandleError(err)

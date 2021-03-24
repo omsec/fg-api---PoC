@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"forza-garage/apperror"
 	"forza-garage/database"
 	"forza-garage/helpers"
 	"forza-garage/lookups"
@@ -154,7 +155,7 @@ func (m UserModel) GetUserByID(ID string) (*User, error) {
 	// https://ildar.pro/golang-hints-create-mongodb-object-id-from-string/
 	id, err := primitive.ObjectIDFromHex(ID)
 	if err != nil {
-		return nil, ErrNoData // eigentlich ErrInvalidUser da keine gültige OID, jedoch std-meldung ausgeben
+		return nil, apperror.ErrNoData // eigentlich ErrInvalidUser da keine gültige OID, jedoch std-meldung ausgeben
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -163,7 +164,7 @@ func (m UserModel) GetUserByID(ID string) (*User, error) {
 	err = m.Collection.FindOne(ctx, bson.M{"_id": id}).Decode(&user)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			return nil, ErrNoData
+			return nil, apperror.ErrNoData
 		}
 		// pass any other error
 		return nil, helpers.WrapError(err, helpers.FuncName())
@@ -296,7 +297,7 @@ func (m UserModel) SetPassword(userID primitive.ObjectID, newPassword string) er
 	// just an additional check to discover data consistency problems
 	if result.MatchedCount != 1 || result.ModifiedCount != 1 {
 		// treat this as system error (which causes 500)
-		return helpers.WrapError(ErrMultipleRecords, helpers.FuncName())
+		return helpers.WrapError(apperror.ErrMultipleRecords, helpers.FuncName())
 	}
 
 	return nil
@@ -343,7 +344,7 @@ func (m UserModel) GetCredentials(UserID string, loadFriendlist bool) *Credentia
 			/*
 				if err != nil {
 					// "no data/no friends" is not an error, other errors lead to anonymous user
-					if err != ErrNoData {
+					if err != apperror.ErrNoData {
 						m.setDefaultProfile(&credentials)
 					}
 				}
@@ -653,7 +654,7 @@ func (m UserModel) getReferences(userID string, relationType string) ([]UserRef,
 
 	// check for empty result set (no error raised by find)
 	if results == nil {
-		return nil, ErrNoData
+		return nil, apperror.ErrNoData
 	}
 
 	// final list
@@ -741,18 +742,18 @@ func GrantPermissions(itemVisibilityCode int32, itemCreatorID primitive.ObjectID
 
 	if itemVisibilityCode == lookups.VisibilityMembers && credentials.RoleCode == lookups.UserRoleGuest {
 		// get a log-in and make friends
-		return ErrGuest
+		return apperror.ErrGuest
 	}
 
 	// if (itemVisibilityCode == lookups.VisibilityMembers) && (UserReferenced(credentials.Friends, itemCreatorID) == false) && (itemCreatorID != credentials.UserID) {
 	if (itemVisibilityCode == lookups.VisibilityMembers) && (!UserReferenced(credentials.Friends, itemCreatorID)) && (itemCreatorID != credentials.UserID) {
 		// make friends with them
-		return ErrNotFriend
+		return apperror.ErrNotFriend
 	}
 
 	if itemVisibilityCode == lookups.VisibilityNone && (credentials.UserID != itemCreatorID) {
 		// ask them to share
-		return ErrPrivate
+		return apperror.ErrPrivate
 	}
 
 	// all checks passed
