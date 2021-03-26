@@ -181,6 +181,7 @@ func (t *Tracker) ListVisitors(objectID string, startDT time.Time, userID string
 			},
 			}},
 		}}
+
 	// Resulat am Schluss sortieren und limitieren
 	sortStage := bson.D{{Key: "$sort", Value: bson.D{{Key: "lastVisit", Value: -1}}}} // desc
 	limitStage := bson.D{{Key: "$limit", Value: 5}}
@@ -241,6 +242,9 @@ func (t *Tracker) ListVisitors(objectID string, startDT time.Time, userID string
 // Replicate moves the visits from the cache (Redis) into the database (Mongo)
 func (t *Tracker) Replicate() {
 	fmt.Println("Replicating...")
+
+	// ToDo: Contexte optimieren
+	// evtl. nur einer, und mit TimeOut; Background ist nciht cancellable
 
 	var ctx = context.Background()
 	var err error

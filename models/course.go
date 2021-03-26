@@ -36,6 +36,7 @@ type Course struct {
 	SeriesText     string             `json:"seriesText" bson:"-"`
 	CarClassesCode []int32            `json:"carClassesCode" bson:"carClassesCD"`
 	CarClassesText []string           `json:"carClassesText" bson:"-"`
+	Description    string             `json:"description" bson:"description,omitempty"`
 	Route          *CourseRef         `json:"route" bson:"route,omitempty"` // standard route which a custom route is based on
 	Tags           []string           `json:"tags" bson:"tags"`
 	// omitempty merkt selber, ob das feld im json vorhanden war :-) ohne wird def-wert des typs gespeichert
@@ -166,7 +167,7 @@ func (m CourseModel) CreateCourse(course *Course, userID string) (string, error)
 		// Fachlicher Fehler oder bereits wrapped
 		return "", err
 	}
-	course.MetaInfo.CreatedName = userName
+	course.MetaInfo.CreatedName = userName // immer user name speichern, statisch
 	course.MetaInfo.TouchedTS = time.Now()
 	course.MetaInfo.Rating = 0
 	course.MetaInfo.RecVer = 1
@@ -544,6 +545,7 @@ func (m CourseModel) UpdateCourse(course *Course, userID string) error {
 		{Key: "$set", Value: bson.D{{Key: "seriesCD", Value: course.SeriesCode}}},
 		{Key: "$set", Value: bson.D{{Key: "styleCD", Value: course.StyleCode}}},
 		{Key: "$set", Value: bson.D{{Key: "carClassesCD", Value: course.CarClassesCode}}},
+		{Key: "$set", Value: bson.D{{Key: "description", Value: course.Description}}},
 		{Key: "$set", Value: bson.D{{Key: "tags", Value: course.Tags}}},
 	}
 

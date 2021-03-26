@@ -4,6 +4,7 @@ import (
 	"forza-garage/apperror"
 	"forza-garage/authentication"
 	"forza-garage/environment"
+	"forza-garage/lookups"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -63,14 +64,12 @@ func GetUser(c *gin.Context) {
 		return
 	*/
 
-	// userID (currentUser) could be used to check a user's permission to view another profile
-	/*
-		userID, err := authentication.Authenticate(c.Request)
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, err.Error())
-			return
-		}
-	*/
+	// used to apply privacy rules if someone else is viewing the profile
+	userID, err := authentication.Authenticate(c.Request)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, err.Error())
+		return
+	}
 
 	// fehlender parameter muss nicht geprüft werden, sonst wär's eine andere route
 	user, err := environment.Env.UserModel.GetUserByID(c.Param("id"))
@@ -84,6 +83,16 @@ func GetUser(c *gin.Context) {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)
 		return
+	}
+
+	// apply privacy rules to visitors
+	if userID != c.Param("id") {
+		switch user.PrivacyCode {
+		case lookups.PrivacyUserName:
+			user.XBoxTag = ""
+		case lookups.PrivacyXboxTag:
+			user.LoginName = ""
+		}
 	}
 
 	// don't send password hash

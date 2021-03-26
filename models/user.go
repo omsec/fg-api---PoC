@@ -24,14 +24,16 @@ type User struct {
 	RoleText     string             `json:"roleText" bson:"-"`
 	LanguageCode int32              `json:"languageCode" bson:"languageCD" header:"Language"`
 	LanguageText string             `json:"languageText" bson:"-"`
-	EMailAddress string             `json:"eMail" bson:"eMail"`                 // unique
-	XBoxTag      string             `json:"XBoxTag" bson:"XBoxTag"`             // unique
+	EMailAddress string             `json:"eMail" bson:"eMail"`     // unique
+	XBoxTag      string             `json:"XBoxTag" bson:"XBoxTag"` // unique
+	PrivacyCode  int32              `json:"privacyCode" bson:"privacyCD"`
+	PrivacyText  string             `json:"privacyText" bson:"-"` // what to show to others in profile (usr-name vs xbox-tag)
+	Joined       time.Time          `json:"joinedTS" bson:"-"`
 	LastSeenTS   []time.Time        `json:"lastSeen" bson:"lastSeen,omitempty"` // limited to 5 in DB-Query (setLastSeen)
 	Friends      []UserRef          `json:"friends" bson:"-"`                   // loaded from diff. collection, at request
 	Following    []UserRef          `json:"following" bson:"-"`                 // loaded from diff. collection, at request
 	Followers    []UserRef          `json:"followers" bson:"-"`                 // loaded from diff. collection, at request
 	// ToDo: []LastPasswords - check for 90 days or 10 entries
-	// ToDo: joined json only - extracted from oid
 }
 
 // Credentials is used for programmatic control
@@ -139,6 +141,9 @@ func (m UserModel) GetUserByName(userName string) (*User, error) {
 		return nil, helpers.WrapError(err, helpers.FuncName())
 	}
 
+	// extract creation timestamp from OID
+	user.Joined = primitive.ObjectID(user.ID).Timestamp()
+
 	// ToDO: überlegen, ob hier die Friends etc. gelesen werden sollen - denke nicht nötig (getcredeitnaisl für prüfungen, sonst getProfile...?)
 
 	// add look-up texts
@@ -169,6 +174,8 @@ func (m UserModel) GetUserByID(ID string) (*User, error) {
 		// pass any other error
 		return nil, helpers.WrapError(err, helpers.FuncName())
 	}
+	// extract creation timestamp from OID
+	user.Joined = primitive.ObjectID(id).Timestamp()
 
 	// add look-up text
 	//user.RoleText = database.GetLookupText(lookups.LookupType(lookups.LTuserRole), user.RoleCode)
@@ -322,8 +329,10 @@ func (m UserModel) GetCredentials(UserID string, loadFriendlist bool) *Credentia
 		fields := bson.D{
 			{Key: "_id", Value: 0}, // _id kommt immer, ausser es wird explizit ausgeschlossen (0)
 			{Key: "loginName", Value: 1},
+			{Key: "XBoxTag", Value: 1},
 			{Key: "roleCD", Value: 1}, // {Key: "metaInfo.rating", Value: 1}, -- so könnte die nested struct eingeschränkt werden
 			{Key: "languageCD", Value: 1},
+			{Key: "privacyCD", Value: 1},
 		}
 
 		opts := options.FindOne().SetProjection(fields)
@@ -826,6 +835,7 @@ func (m UserModel) setDefaultProfile(credentials *Credentials) {
 func (m UserModel) addLookups(user *User) *User {
 	user.RoleText = database.GetLookupText(lookups.LookupType(lookups.LTuserRole), user.RoleCode)
 	user.LanguageText = database.GetLookupText(lookups.LookupType(lookups.LTlang), user.LanguageCode)
+	user.PrivacyText = database.GetLookupText(lookups.LookupType(lookups.LTprivacy), user.PrivacyCode)
 
 	return user
 }

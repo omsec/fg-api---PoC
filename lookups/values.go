@@ -22,6 +22,12 @@ const (
 	GameFH5
 )
 
+// Privacy
+const (
+	PrivacyUserName = iota
+	PrivacyXboxTag
+)
+
 // visibility
 const (
 	VisibilityAll = iota

@@ -10,6 +10,7 @@ const (
 	LTuserRole = iota
 	LTlang
 	LTgame
+	LTprivacy
 	LTvisibility
 	LTcourseType
 	LTcourseStyle
@@ -32,6 +33,8 @@ func LookupType(lt int) string {
 		str = "user language"
 	case lt == LTgame:
 		str = "game"
+	case lt == LTprivacy:
+		str = "user privacy"
 	case lt == LTvisibility:
 		str = "visibility"
 	case lt == LTcourseType:
