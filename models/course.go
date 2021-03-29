@@ -2,7 +2,6 @@ package models
 
 import (
 	"context"
-	"fmt"
 	"forza-garage/analytics"
 	"forza-garage/apperror"
 	"forza-garage/database"
@@ -20,6 +19,8 @@ import (
 
 // Course is the "interface" used for client communication
 type Course struct {
+	// omitempty merkt selber, ob das feld im json vorhanden war :-) ohne wird def-wert des typs gespeichert
+	// von angular käme dann wohl null von einem leeren control
 	ID             primitive.ObjectID `json:"id" bson:"_id"`
 	MetaInfo       Header             `json:"metaInfo" bson:"metaInfo"` // non-ptr = always present
 	VisibilityCode int32              `json:"visibilityCode" bson:"visibilityCD"`
@@ -34,15 +35,10 @@ type Course struct {
 	Name           string             `json:"name" bson:"name"`                 // same name as CMPs to enables over-all searches
 	SeriesCode     int32              `json:"seriesCode" bson:"seriesCD"`
 	SeriesText     string             `json:"seriesText" bson:"-"`
-	CarClassesCode []int32            `json:"carClassesCode" bson:"carClassesCD"`
-	CarClassesText []string           `json:"carClassesText" bson:"-"`
+	CarClasses     []Lookup           `json:"carClassCodes" bson:"carClasses"` // multi-value lookups as nested structure
 	Description    string             `json:"description" bson:"description,omitempty"`
 	Route          *CourseRef         `json:"route" bson:"route,omitempty"` // standard route which a custom route is based on
-	Tags           []string           `json:"tags" bson:"tags"`
-	// omitempty merkt selber, ob das feld im json vorhanden war :-) ohne wird def-wert des typs gespeichert
-	// von angular käme dann wohl null von einem leeren control
-	//OptionalNum    int32              `json:"optionalNum" bson:"optionalNum,omitempty"`
-	//OptionalStr    string             `json:"optionalStr" bson:"optionalStr,omitempty"`
+	Tags           []string           `json:"tags" bson:"tags,omitempty"`
 }
 
 // CourseRef is used as a reference
@@ -53,21 +49,20 @@ type CourseRef struct {
 
 // CourseListItem is the reduced/simplified model used for listings
 type CourseListItem struct {
-	ID             primitive.ObjectID `json:"id"`
-	CreatedTS      time.Time          `json:"createdTS"`
-	CreatedID      primitive.ObjectID `json:"createdID"`
-	CreatedName    string             `json:"createdName"`
-	Rating         float32            `json:"rating"`
-	GameCode       int32              `json:"gameCode"`
-	GameText       string             `json:"gameText"`
-	Name           string             `json:"name"`
-	ForzaSharing   int32              `json:"forzaSharing"`
-	SeriesCode     int32              `json:"seriesCode"`
-	SeriesText     string             `json:"seriesText"`
-	StyleCode      int32              `json:"styleCode"`
-	StyleText      string             `json:"styleText"`
-	CarClassesCode []int32            `json:"carClassesCode"`
-	CarClassesText []string           `json:"carClassesText"`
+	ID           primitive.ObjectID `json:"id"`
+	CreatedTS    time.Time          `json:"createdTS"`
+	CreatedID    primitive.ObjectID `json:"createdID"`
+	CreatedName  string             `json:"createdName"`
+	Rating       float32            `json:"rating"`
+	GameCode     int32              `json:"gameCode"`
+	GameText     string             `json:"gameText"`
+	Name         string             `json:"name"`
+	ForzaSharing int32              `json:"forzaSharing"`
+	SeriesCode   int32              `json:"seriesCode"`
+	SeriesText   string             `json:"seriesText"`
+	StyleCode    int32              `json:"styleCode"`
+	StyleText    string             `json:"styleText"`
+	CarClasses   []Lookup           `json:"carClasses" bson:"carClasses"`
 }
 
 const (
@@ -106,7 +101,7 @@ type CourseModel struct {
 }
 
 // Models do not change original values passed by the controllers, but return new structures
-// arguments passed by ref (pointers) for performance
+// arguments (usually) passed by ref (pointers) for performance
 
 // Validate checks given values and sets defaults where applicable (immutable)
 func (m CourseModel) Validate(course Course) (*Course, error) {
@@ -155,7 +150,6 @@ func (m CourseModel) ForzaSharingExists(sharingCode int32) (bool, error) {
 }
 
 // CreateCourse adds a new route - validated by controller
-// ToDO: Rename "Add" ?
 func (m CourseModel) CreateCourse(course *Course, userID string) (string, error) {
 
 	// set "system-fields"
@@ -211,7 +205,7 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams, userID strin
 		{Key: "forzaSharing", Value: 1},
 		{Key: "seriesCD", Value: 1},
 		{Key: "styleCD", Value: 1},
-		{Key: "carClassesCD", Value: 1},
+		{Key: "carClasses", Value: 1},
 	}
 
 	sort := bson.D{
@@ -393,25 +387,26 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams, userID strin
 	var courseList []CourseListItem
 	var course CourseListItem
 
-	for _, v := range courses {
-		course.ID = v.ID
-		course.CreatedTS = primitive.ObjectID.Timestamp(v.ID)
-		course.CreatedID = v.MetaInfo.CreatedID
-		course.CreatedName = v.MetaInfo.CreatedName
-		course.Rating = v.MetaInfo.Rating
-		course.GameCode = v.GameCode
-		course.GameText = database.GetLookupText(lookups.LookupType(lookups.LTgame), v.GameCode)
-		course.Name = v.Name
-		course.ForzaSharing = v.ForzaSharing
-		course.SeriesCode = v.SeriesCode
-		course.SeriesText = database.GetLookupText(lookups.LookupType(lookups.LTseries), v.SeriesCode)
-		course.StyleCode = v.StyleCode
-		course.StyleText = database.GetLookupText(lookups.LookupType(lookups.LTcourseStyle), v.StyleCode)
-		course.CarClassesCode = v.CarClassesCode
-		//course.CarClassText = database.GetLookupText(lookups.LookupType(lookups.LTcarClass), v.CarClassCode)
-		course.CarClassesText = make([]string, len(v.CarClassesCode))
-		for i := range v.CarClassesCode {
-			course.CarClassesText[i] = database.GetLookupText(lookups.LookupType(lookups.LTcarClass), v.CarClassesCode[i])
+	for _, c := range courses {
+		course.ID = c.ID
+		course.CreatedTS = primitive.ObjectID.Timestamp(c.ID)
+		course.CreatedID = c.MetaInfo.CreatedID
+		course.CreatedName = c.MetaInfo.CreatedName
+		course.Rating = c.MetaInfo.Rating
+		course.GameCode = c.GameCode
+		course.GameText = database.GetLookupText(lookups.LookupType(lookups.LTgame), c.GameCode)
+		course.Name = c.Name
+		course.ForzaSharing = c.ForzaSharing
+		course.SeriesCode = c.SeriesCode
+		course.SeriesText = database.GetLookupText(lookups.LookupType(lookups.LTseries), c.SeriesCode)
+		course.StyleCode = c.StyleCode
+		course.StyleText = database.GetLookupText(lookups.LookupType(lookups.LTcourseStyle), c.StyleCode)
+		if len(c.CarClasses) > 0 {
+			course.CarClasses = make([]Lookup, len(c.CarClasses))
+			for i, v := range c.CarClasses {
+				course.CarClasses[i].Value = v.Value
+				course.CarClasses[i].Text = database.GetLookupText(lookups.LookupType(lookups.LTcarClass), v.Value)
+			}
 		}
 
 		courseList = append(courseList, course)
@@ -505,7 +500,6 @@ func (m CourseModel) UpdateCourse(course *Course, userID string) error {
 	// ToDO: GrantPermission für Course-Klasse erstellen
 	err = GrantPermissions(data.VisibilityCode, data.CreatedID, credentials)
 	if err != nil {
-		fmt.Println("test1")
 		// no wrapping needed, since function returns app errors
 		return err
 	}
@@ -544,7 +538,7 @@ func (m CourseModel) UpdateCourse(course *Course, userID string) error {
 		{Key: "$set", Value: bson.D{{Key: "name", Value: course.Name}}},
 		{Key: "$set", Value: bson.D{{Key: "seriesCD", Value: course.SeriesCode}}},
 		{Key: "$set", Value: bson.D{{Key: "styleCD", Value: course.StyleCode}}},
-		{Key: "$set", Value: bson.D{{Key: "carClassesCD", Value: course.CarClassesCode}}},
+		{Key: "$set", Value: bson.D{{Key: "carClasses", Value: course.CarClasses}}}, // arrays replaced as a whole
 		{Key: "$set", Value: bson.D{{Key: "description", Value: course.Description}}},
 		{Key: "$set", Value: bson.D{{Key: "tags", Value: course.Tags}}},
 	}
@@ -571,11 +565,9 @@ func (m CourseModel) addLookups(course *Course) *Course {
 	course.TypeText = database.GetLookupText(lookups.LookupType(lookups.LTcourseType), course.TypeCode)
 	course.SeriesText = database.GetLookupText(lookups.LookupType(lookups.LTseries), course.SeriesCode)
 	course.StyleText = database.GetLookupText(lookups.LookupType(lookups.LTcourseStyle), course.StyleCode)
-	// course.CarClassText = database.GetLookupText(lookups.LookupType(lookups.LTcarClass), course.CarClassCode)
-	course.CarClassesText = make([]string, len(course.CarClassesCode))
-	for i := range course.CarClassesCode {
-		course.CarClassesText[i] = database.GetLookupText(lookups.LookupType(lookups.LTcarClass), course.CarClassesCode[i])
+	for i, v := range course.CarClasses {
+		course.CarClasses[i].Text = database.GetLookupText(lookups.LookupType(lookups.LTcarClass), v.Value)
 	}
 
-	return course
+	return course // müsste gar nichts zurückliefern ;-)
 }

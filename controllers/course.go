@@ -342,6 +342,11 @@ func UpdateCourse(c *gin.Context) {
 		return
 	}
 
+	// eigentlich wird die ID als URL-Parameter übergeben, sie macht das URL eindeutig
+	// da sie aber sowieso im Body enthalten ist (Angular schickt immer das ganze Objekt)
+	// wird sie von dort übernommen - das erspart einen zusätzlich cast
+	// var id = c.Param("id")
+
 	// use "shouldBind" not all fields are required in this context (eg. MetaInfo.recVer is requred)
 	if err = c.ShouldBindJSON(&data); err != nil {
 		apiError.Code = InvalidJSON

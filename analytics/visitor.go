@@ -243,9 +243,19 @@ func (t *Tracker) ListVisitors(objectID string, startDT time.Time, userID string
 func (t *Tracker) Replicate() {
 	fmt.Println("Replicating...")
 
+	// Steps 3 and 4 form a logical execution unit ("XA-Transaction")
+	// a) do not delete keys in redis, if the slice was not written to mongoDB
+	// b) "theorerically" if the delete operation in redis fails (after data was written to mongoDB)
+	//    it should be deleted again in mongoDB...
+	// however that's NOT implemented; as this code should be kept fast and easy (it's not an ETL-tool)
+	// theoretically, written (copied) keys' values could be updated with a "replicated" flag,
+	// and deleted periodically in another GO-routine - but that's another write/update step against the
+	// cache - and it could fail as well
+
 	// ToDo: Contexte optimieren
 	// evtl. nur einer, und mit TimeOut; Background ist nciht cancellable
 
+	// ToDo: with timeOut wie bei MongoDB
 	var ctx = context.Background()
 	var err error
 
