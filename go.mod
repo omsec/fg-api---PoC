@@ -7,6 +7,7 @@ require (
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/gin-gonic/gin v1.6.3
 	github.com/go-redis/redis/v8 v8.4.4
+	github.com/influxdata/influxdb-client-go v1.4.0
 	github.com/joho/godotenv v1.3.0
 	github.com/myesui/uuid v1.0.0 // indirect
 	github.com/stretchr/testify v1.7.0 // indirect

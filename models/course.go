@@ -190,13 +190,14 @@ func (m CourseModel) CreateCourse(course *Course, userID string) (string, error)
 // SearchCourses lists or searches course (ohne Comments, aber mit Files/Tags)
 func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams, userID string) ([]CourseListItem, error) {
 
-	// Verkleinerte/vereinfachte Struktur für Listen
+	m.Tracker.SaveSearch("course", searchSpecs.GameCode, searchSpecs.SeriesCodes, searchSpecs.SearchTerm, userID)
+
+	// CourseListeItem: Verkleinerte/vereinfachte Struktur für Listen
 	// MongoDB muss eine passende Struktur erhalten um die Daten aufzunehmen (z. B. mit nested Arrays)
 	// das API kann die Daten dann in die Listenstruktur kopieren
 	// daher wird zum Aufnehmen der Daten aus der DB immer mit der Original-Struktur gearbeitet
 	// Speicherbedarf bleibt halt gleich, dafür nimmt die Netzlast ab
 
-	// use original struct to receive selected fields
 	fields := bson.D{
 		{Key: "_id", Value: 1},      // _id kommt immer, ausser es wird explizit ausgeschlossen (0)
 		{Key: "metaInfo", Value: 1}, // {Key: "metaInfo.rating", Value: 1}, -- so könnte die nested struct eingeschränkt werden

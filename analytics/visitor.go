@@ -2,16 +2,16 @@ package analytics
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
+	"forza-garage/apperror"
+	"forza-garage/database"
 	"forza-garage/helpers"
+	"forza-garage/lookups"
+	"math"
 	"os"
-	"strings"
 	"time"
 
-	"github.com/go-redis/redis/v8"
-	"github.com/twinj/uuid"
+	influxdb2 "github.com/influxdata/influxdb-client-go"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -19,13 +19,15 @@ import (
 )
 
 type Tracker struct {
-	redisClient    *redis.Client
+	influxClient   influxdb2.Client
+	VisitorAPI     database.InfluxAPI
+	SearchAPI      database.InfluxAPI
 	collection     *mongo.Collection
 	GetUserName    func(ID string) (string, error)
 	GetUserNameOID func(userID primitive.ObjectID) (string, error)
 }
 
-// VisitCache is the list item in the cache (redis)
+// VisitCache is the list item in the cache (redis) -ToDO
 type VisitCache struct {
 	VisitTS time.Time `json:"visitTS"`
 	UserID  string    `json:"userID"`
@@ -42,96 +44,138 @@ type Visit struct {
 	UserName   string             `json:"userName" bson:"userName,omitempty"`
 }
 
-// Provisorisch
-// ToDo: In AppError-Package, typisiert
-var (
-	ErrNoData = errors.New("no records found")
-)
-
-func (t *Tracker) SetConnections(redisClient *redis.Client, mongoCollection *mongo.Collection) {
-	t.redisClient = redisClient
+// ToDo
+func (t *Tracker) SetConnections(influxClient *influxdb2.Client, mongoCollection *mongo.Collection) {
+	t.influxClient = *influxClient
 	t.collection = mongoCollection
 }
 
-// SaveVisitor stores event data in the cache
+// SaveVisitor stores event data in the analytics cache
 func (t *Tracker) SaveVisitor(objectType string, objectID string, userID string) {
 
 	if os.Getenv("USE_ANALYTICS") != "YES" {
 		return
 	}
 
-	// fmt.Println("Tracking...")
+	p := influxdb2.NewPoint(
+		"visit",
+		map[string]string{"profileId": objectType + "_" + objectID},
+		map[string]interface{}{"userId": userID},
+		time.Now())
 
-	var ctx = context.Background()
-
-	key := objectType + "_" + objectID + "_" + uuid.NewV4().String()
-
-	//fmt.Println(key)
-
-	profileVisit := VisitCache{
-		VisitTS: time.Now(),
-		UserID:  userID,
-	}
-
-	// erzeugt []byte
-	b, err := json.Marshal(profileVisit)
-	if err != nil {
-		fmt.Println(err) // ToDO: Loggen, abbruch im Fehlerfall durch return
-		return
-	}
-
-	err = t.redisClient.Set(ctx, key, b, 0).Err()
-	if err != nil {
-		fmt.Println(err) // ToDO: Loggen, abbruch im Fehlerfall durch return
-	}
+	// ToDo: log Error
+	t.VisitorAPI.WriteAPI.WritePoint(context.Background(), p)
 
 }
 
-// GetVisits
-// ToDO: name t "this" in general
-func (t *Tracker) GetVisits(objectID string, startDT time.Time) (int64, error) {
+// SaveSearch stores event data in the analytics cache
+// series is a masked integer
+func (t *Tracker) SaveSearch(domain string, gameCode int32, seriesCodes []int32, searchTerm string, userID string) {
+
+	// zum testen auskommentieren
+	if os.Getenv("USE_ANALYTICS") != "YES" {
+		return
+	}
+
+	// do not log "homepage" (no filters)
+	if len(seriesCodes) == 3 && searchTerm == "" {
+		return
+	}
+
+	// convert seriesCodes into indicators
+	road, dirt, cross := t.seriesIndicators(seriesCodes)
+	// indicators
+
+	// searched series will be stored bitwise to save storage, according to this:
+	// https://www.mssqltips.com/sqlservertip/1218/sql-server-bitwise-operators-to-store-multiple-values-in-one-column/
+	series := byte(math.Pow(2*road, 1) + math.Pow(2*dirt, 2) + math.Pow(2*cross, 3))
+
+	fields := map[string]interface{}{
+		"game":   gameCode,
+		"series": series,
+		"term":   searchTerm}
+
+	p := influxdb2.NewPoint(
+		"search",
+		map[string]string{"domain": domain}, // course, championship ...
+		fields,
+		time.Now())
+
+	// ToDo: log Error
+	t.SearchAPI.WriteAPI.WritePoint(context.Background(), p)
+
+}
+
+// GetVisits reads peristed visitor data from the database
+func (t *Tracker) GetVisits(objectType string, objectID string, startDT time.Time) (int64, error) {
 
 	// zum testen auskommentieren
 	if os.Getenv("USE_ANALYTICS") != "YES" {
 		return -1, nil
 	}
 
-	// 1. count documents in mongoDB
-	oid, err := primitive.ObjectIDFromHex(objectID)
+	// evtl. nur Visits today - total count für owner
+
+	flux := `from(bucket: "%s")
+		|> range(start: -1d)
+		|> filter(fn: (r) => r["_measurement"] == "visit" and r["profileId"] == "%s")
+		|> count()
+		|> yield(name: "count")`
+
+	id := objectType + "_" + objectID
+	flux = fmt.Sprintf(flux, os.Getenv("ANALYTICS_VISITORS_BUCKET"), id)
+
+	result, err := t.SearchAPI.QueryAPI.Query(context.Background(), flux)
 	if err != nil {
 		return 0, helpers.WrapError(err, helpers.FuncName())
 	}
 
-	filter := bson.D{
-		{Key: "visitTS", Value: bson.D{
-			{Key: "$gte", Value: startDT},
-		}},
-		{Key: "objectID", Value: oid},
+	// nur 1 record
+	var res interface{}
+	for result.Next() {
+		res = result.Record().Value()
 	}
 
-	opts := options.Count().SetMaxTime(2 * time.Second)
-	// ToDo: Hint & Index erstellen (sort desc)
+	fmt.Println(res)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel() // nach 10 Sekunden abbrechen
-
-	cnt, err := t.collection.CountDocuments(ctx, filter, opts)
-	if err != nil {
-		return 0, helpers.WrapError(err, helpers.FuncName())
-	}
-
-	// 2. also check for data in the cache that's not yet replicated (optional)
-	allKeys, err := t.getKeys("*" + objectID + "*")
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	//fmt.Println(allKeys)
-	if allKeys != nil {
-		cnt += int64(len(allKeys))
+	var cnt int64 = 0
+	if res != nil {
+		cnt = res.(int64)
 	}
 
 	return cnt, nil
+
+	// Gesamtlösung noch etwas unklar :-)
+	// Eventuell mit Replikation in die MongoDB zur Langzeitspeicherung (aktuell TTL 30d auf der Collection!)
+	// momemtan Live-Auswertung aus der InfluxDB (TTL setzen)
+	/*
+		// 1. count documents in mongoDB
+		oid, err := primitive.ObjectIDFromHex(objectID)
+		if err != nil {
+			return 0, helpers.WrapError(err, helpers.FuncName())
+		}
+
+		filter := bson.D{
+			{Key: "visitTS", Value: bson.D{
+				{Key: "$gte", Value: startDT},
+			}},
+			{Key: "objectID", Value: oid},
+		}
+
+		opts := options.Count().SetMaxTime(2 * time.Second)
+		// ToDo: Hint & Index erstellen (sort desc)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel() // nach 10 Sekunden abbrechen
+
+		cnt, err := t.collection.CountDocuments(ctx, filter, opts)
+		if err != nil {
+			return 0, helpers.WrapError(err, helpers.FuncName())
+		}
+
+		// 2. also check for data in the cache that's not yet replicated (optional, ToDO: Influx)
+		return cnt, nil
+	*/
 }
 
 // ListVisitors
@@ -209,7 +253,7 @@ func (t *Tracker) ListVisitors(objectID string, startDT time.Time, userID string
 
 	// check for empty result set (no error raised by find)
 	if visitsDB == nil {
-		return nil, ErrNoData
+		return nil, apperror.ErrNoData
 	}
 
 	// MDB-TS->GoTime
@@ -239,153 +283,29 @@ func (t *Tracker) ListVisitors(objectID string, startDT time.Time, userID string
 	return visits, nil
 }
 
-// Replicate moves the visits from the cache (Redis) into the database (Mongo)
+// Replicate moves the visits from the cache (InfluxDB) into the database (Mongo)
 func (t *Tracker) Replicate() {
 	fmt.Println("Replicating...")
 
-	// Steps 3 and 4 form a logical execution unit ("XA-Transaction")
-	// a) do not delete keys in redis, if the slice was not written to mongoDB
-	// b) "theorerically" if the delete operation in redis fails (after data was written to mongoDB)
-	//    it should be deleted again in mongoDB...
-	// however that's NOT implemented; as this code should be kept fast and easy (it's not an ETL-tool)
-	// theoretically, written (copied) keys' values could be updated with a "replicated" flag,
-	// and deleted periodically in another GO-routine - but that's another write/update step against the
-	// cache - and it could fail as well
+	// ausführen jede Stunde
+	// älter 30 tage
+	// summiere in MongoDB (oid, count)
 
-	// ToDo: Contexte optimieren
-	// evtl. nur einer, und mit TimeOut; Background ist nciht cancellable
+	// 3. save visits into MongoDB (wieder einbauen)
 
-	// ToDo: with timeOut wie bei MongoDB
-	var ctx = context.Background()
-	var err error
-
-	var allKeys []string
-
-	var visits []Visit
-
-	// 1. get all keys in DB
-	allKeys, err = t.getKeys("*")
-	if err != nil {
-		return // abort in case of an error
-	}
-
-	// abort if no data found
-	if allKeys == nil {
-		return
-	}
-
-	// 2. extract values and build target structure
-	vc := VisitCache{}
-	vd := Visit{}      // database target
-	var parts []string // used to split key name
-	var userName = ""
-	for _, key := range allKeys {
-		val, err := t.redisClient.Get(ctx, key).Result()
-		if err != nil {
-			fmt.Println(err) // ToDO: Log
-			return           // abort entire function in case of an error Altenrative: noch eine ArrayListe bauen mit "korrekten"
-		}
-
-		json.Unmarshal([]byte(val), &vc)
-
-		vd.ID = primitive.NewObjectID()
-		vd.VisitTS = vc.VisitTS
-
-		parts = strings.Split(key, "_")
-		vd.ObjectType = parts[0]
-		vd.ObjectID, _ = primitive.ObjectIDFromHex(parts[1])
-
-		if vc.UserID != "" {
-			vd.UserID, err = primitive.ObjectIDFromHex(vc.UserID)
-			// any error treated as anonymous user
-			if err != nil {
-				vd.UserID = primitive.NilObjectID
-				vd.UserName = ""
-			} else {
-				// ok
-				userName, err = t.GetUserName(vc.UserID)
-				if err == nil {
-					vd.UserName = userName
-				}
-			}
-		} else {
-			// anonymous user (not logged-in)
-			vd.UserID = primitive.NilObjectID
-			vd.UserName = ""
-		}
-		visits = append(visits, vd)
-	}
-
-	// abort if no data to process
-	if visits == nil {
-		return
-	}
-
-	// 3. save visits into MongoDB (private proc?)
-	// https://golangbyexample.com/print-struct-variables-golang/
-	// fmt.Printf("%+v", visits)
-
-	// https://medium.com/glottery/golang-and-mongodb-with-go-mongo-driver-part-1-1c43aba25a1
-	docs := []interface{}{}
-	// docs = append(docs, visits...) geht leider nicht
-	for _, v := range visits {
-		docs = append(docs, v)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel() // nach 10 Sekunden abbrechen
-
-	res, err := t.collection.InsertMany(ctx, docs)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	fmt.Println(res.InsertedIDs)
-
-	// 4. Delete processed data in Redis
-	for _, key := range allKeys {
-		_, err := t.redisClient.Del(ctx, key).Result()
-		if err != nil {
-			fmt.Println(err) // ToDO: Log
-			return           // abort entire function in case of an error Altenrative: noch eine ArrayListe bauen mit "korrekten"
-		}
-	}
 }
 
-// internal methods used by multiple functions
-
-// get a list of keys matching a specific name
-// ToDO: evtl. in redis/db package auslagern
-func (t *Tracker) getKeys(searchMask string) ([]string, error) {
-
-	var ctx = context.Background()
-	var cursor uint64
-	var err error
-
-	var keys []string // current iteration of cursor
-	var allKeys []string
-
-	for {
-		keys, cursor, err = t.redisClient.Scan(ctx, cursor, searchMask, 10).Result()
-		if err != nil {
-			return nil, helpers.WrapError(err, helpers.FuncName())
+func (t *Tracker) seriesIndicators(seriesCodes []int32) (road float64, dirt float64, cross float64) {
+	for _, v := range seriesCodes {
+		if v == lookups.SeriesRoad {
+			road = 1
 		}
-
-		// jede cursor iteration in die gesamtliste übernehmen
-		allKeys = append(allKeys, keys...)
-
-		/*
-			// spread operator entspricht dem hier
-			for _, v := range keys {
-				allKeys = append(allKeys, v)
-			}
-		*/
-
-		// loop beenden wenn nichts mehr kommt
-		if cursor == 0 {
-			break
+		if v == lookups.SeriesDirt {
+			dirt = 1
+		}
+		if v == lookups.SeriesCross {
+			cross = 1
 		}
 	}
-	return allKeys, nil
+	return road, dirt, cross
 }

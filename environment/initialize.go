@@ -6,7 +6,7 @@ import (
 	"forza-garage/models"
 	"os"
 
-	"github.com/go-redis/redis/v8"
+	influxdb2 "github.com/influxdata/influxdb-client-go"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -18,14 +18,25 @@ type Environment struct {
 }
 
 // newEnv operates as the constructor to initialize the collection references (private)
-func newEnv(mongoClient *mongo.Client, redisClient *redis.Client) *Environment {
+func newEnv(mongoClient *mongo.Client, influxClient *influxdb2.Client) *Environment {
 	env := &Environment{}
+
+	// ToDO: mongoClient für Modelle entfernen
 
 	// prepare analytics gathering (profile visits)
 	// always create the object so no futher checking is needed in the models
 	env.Tracker = new(analytics.Tracker)
-	env.Tracker.SetConnections(redisClient,
+	env.Tracker.SetConnections(
+		influxClient, // brauchts nicht mehr hier
 		mongoClient.Database(os.Getenv("DB_NAME")).Collection("analytics"))
+	// weil pointer umweg über varIABLE
+	fluxClient := *influxClient
+	env.Tracker.VisitorAPI.WriteAPI = fluxClient.WriteAPIBlocking(os.Getenv("ANALYTICS_ORG"), os.Getenv("ANALYTICS_VISITORS_BUCKET"))
+	env.Tracker.VisitorAPI.QueryAPI = fluxClient.QueryAPI(os.Getenv("ANALYTICS_ORG"))
+	env.Tracker.VisitorAPI.DeleteAPI = fluxClient.DeleteAPI()
+	env.Tracker.SearchAPI.WriteAPI = fluxClient.WriteAPIBlocking(os.Getenv("ANALYTICS_ORG"), os.Getenv("ANALYTICS_SEARCHES_BUCKET"))
+	env.Tracker.SearchAPI.QueryAPI = fluxClient.QueryAPI(os.Getenv("ANALYTICS_ORG"))
+	// no deletes required for search bucket (TTL set)
 
 	env.UserModel.Client = mongoClient
 	env.UserModel.Collection = mongoClient.Database(os.Getenv("DB_NAME")).Collection("users") // ToDO: Const
@@ -54,5 +65,6 @@ var Env *Environment
 func InitializeModels() {
 	/*env = &Env{
 	userModel: models.UserModel{Client: database.GetConnection()}}*/
-	Env = newEnv(database.GetConnection(), database.GetRedisConnection())
+
+	Env = newEnv(database.GetConnection(), database.GetInfluxConnection())
 }

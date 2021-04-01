@@ -74,7 +74,7 @@ func GetConnection() *mongo.Client {
 // GetLookups returns a reference to the map of code definitions
 func GetLookups() ([]LookupType, error) {
 	if lookups == nil {
-		return nil, errors.New("Look-up not available")
+		return nil, errors.New("look-up not available")
 	}
 
 	return lookups, nil
