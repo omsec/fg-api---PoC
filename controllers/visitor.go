@@ -68,7 +68,7 @@ func GetVisits(c *gin.Context) {
 
 }
 
-// http://localhost:3000/stats/visits?id=604b6859f09f3aeecc9215c5&startDT=2021-03-20
+// http://localhost:3000/stats/visitors?id=6060491beab278c482d04ed8&startDT=2021-03-20
 func ListVisitors(c *gin.Context) {
 
 	var (
@@ -102,7 +102,6 @@ func ListVisitors(c *gin.Context) {
 		//startDT = time.Date(startDT.Year(), startDT.Month(), startDT.Day(), 0, 0, 0, 0, startDT.Location())
 		startDT = time.Date(startDT.Year(), startDT.Month(), startDT.Day(), 0, 0, 0, 0, startDT.UTC().Location())
 	} else {
-		fmt.Println(startStr)
 		// https://forum.golangbridge.org/t/convert-string-to-date-in-yyyy-mm-dd-format/6026/2
 		startDT, err = time.Parse("2006-01-02", startStr) // seems magic date
 		if err != nil {
@@ -114,7 +113,7 @@ func ListVisitors(c *gin.Context) {
 		}
 	}
 
-	visitors, err := environment.Env.Tracker.ListVisitors(id, startDT, userID)
+	visitors, err := environment.Env.Tracker.ListVisitors("course", id, startDT, userID)
 	if err != nil {
 		// nothing found (not an error to the client)
 		if err == apperror.ErrNoData {

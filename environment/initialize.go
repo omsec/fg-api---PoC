@@ -44,7 +44,7 @@ func newEnv(mongoClient *mongo.Client, influxClient *influxdb2.Client) *Environm
 
 	// inject user model function to analytics tracker after its initialization
 	env.Tracker.GetUserName = env.UserModel.GetUserName
-	env.Tracker.GetUserNameOID = env.UserModel.GetUserNameOID
+	// env.Tracker.GetUserNameOID = env.UserModel.GetUserNameOID - nicht mehr benötigt; alte Lösung
 
 	env.CourseModel.Client = mongoClient
 	env.CourseModel.Collection = mongoClient.Database(os.Getenv("DB_NAME")).Collection("racing") // ToDO: Const
