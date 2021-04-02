@@ -220,7 +220,7 @@ func (t *Tracker) ListVisitors(objectType string, objectID string, startDT time.
 	flux = fmt.Sprintf(
 		flux,
 		os.Getenv("ANALYTICS_VISITORS_BUCKET"),
-		startDT.Format(time.RFC3339),
+		startDT.Format(time.RFC3339), // 2021-04-01T00:00:00Z
 		id)
 
 	result, err := t.SearchAPI.QueryAPI.Query(context.Background(), flux)

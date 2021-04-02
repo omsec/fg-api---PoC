@@ -67,6 +67,10 @@ func handleRequests() {
 	router.GET("/stats/visits", controllers.GetVisits)
 	router.GET("/stats/visitors", authentication.TokenAuthMiddleware(), controllers.ListVisitors)
 
+	// voting
+	// alternative: /course/vote (post) /course/votes (get)
+	router.POST("vote/cast", authentication.TokenAuthMiddleware(), controllers.Vote)
+
 	// course
 	// GET hat keinen BODY (Go/Gin & Postman unterstützen das zwar, Angular nicht) - deshalb Parameter
 	// https://xspdf.com/resolution/58530870.html
