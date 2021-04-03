@@ -69,7 +69,7 @@ func handleRequests() {
 
 	// voting
 	// alternative: /course/vote (post) /course/votes (get)
-	router.POST("vote/cast", authentication.TokenAuthMiddleware(), controllers.Vote)
+	router.POST("/vote/cast", authentication.TokenAuthMiddleware(), controllers.CastVote)
 
 	// course
 	// GET hat keinen BODY (Go/Gin & Postman unterstützen das zwar, Angular nicht) - deshalb Parameter
@@ -81,6 +81,8 @@ func handleRequests() {
 	router.POST("/courses", authentication.TokenAuthMiddleware(), controllers.AddCourse)
 	router.PUT("/courses/:id", authentication.TokenAuthMiddleware(), controllers.UpdateCourse)
 	// ToDO: Delete
+	// voting
+	router.GET("/courses/public/:id/votes", controllers.GetVotes)
 
 	// logics
 	router.POST("/course/exists", authentication.TokenAuthMiddleware(), controllers.ExistsForzaShare) // protected to prevent sniffs ;-)

@@ -12,18 +12,27 @@ import (
 )
 
 // validator (tags) used by Gin => https://github.com/go-playground/validator
+
+// Vote represents a single vote action
 type Vote struct {
 	ProfileID primitive.ObjectID `json:"profileID" bson:"profileID" binding:"required"`
 	UserID    primitive.ObjectID `json:"userID" bson:"userID"` // actually required, read from token
 	UserName  string             `json:"userName" bson:"-"`
 	VoteTS    time.Time          `json:"voteTS" bson:"voteTS"`                 // stored separately because users can change their vote
-	Vote      int                `json:"vote" bson:"vote" validate:"required"` // https://github.com/go-playground/validator/issues/290
+	Vote      int32              `json:"vote" bson:"vote" validate:"required"` // https://github.com/go-playground/validator/issues/290
+}
+
+// ProfileVotes represents the current state of votes related to a profile
+type ProfileVotes struct {
+	UpVotes   int32 `json:"upVotes"`
+	DownVotes int32 `json:"downVotes"`
+	UserVote  int32 `json:"userVote"` // vote action of the requested user (read from token)
 }
 
 const (
-	VoteUp      int = 1
-	VoteDown    int = -1
-	VoteNeutral int = 0 // revoked or not voted
+	VoteUp      int32 = 1
+	VoteDown    int32 = -1
+	VoteNeutral int32 = 0 // revoked or not voted
 )
 
 type VoteModel struct {
@@ -33,7 +42,8 @@ type VoteModel struct {
 	GetUserNameOID func(ID primitive.ObjectID) (string, error)
 }
 
-func (v VoteModel) Vote(profileOID primitive.ObjectID, userID string, vote int) error {
+// CastVotes is used to vote for/against something (a profile, eg. Course/Championship)
+func (v VoteModel) CastVote(profileOID primitive.ObjectID, userID string, vote int32) error {
 
 	// Positive | Negative votes will be Upserts
 	// Revokes will be Deletes
@@ -68,7 +78,7 @@ func (v VoteModel) Vote(profileOID primitive.ObjectID, userID string, vote int) 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel() // nach 10 Sekunden abbrechen
 
-		// not interessted in actual result
+		// not int32eressted in actual result
 		_, err = v.Collection.UpdateOne(ctx, filter, fields, opts)
 		if err != nil {
 			return helpers.WrapError(err, helpers.FuncName())
@@ -84,7 +94,7 @@ func (v VoteModel) Vote(profileOID primitive.ObjectID, userID string, vote int) 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel() // nach 10 Sekunden abbrechen
 
-		// not interessted in actual result
+		// not int32eressted in actual result
 		_, err := v.Collection.DeleteOne(ctx, filter)
 		if err != nil {
 			return helpers.WrapError(err, helpers.FuncName())
@@ -95,6 +105,98 @@ func (v VoteModel) Vote(profileOID primitive.ObjectID, userID string, vote int) 
 	return nil
 }
 
-func (v VoteModel) GetVote(objectID string, userID string) (int, error) {
-	return VoteNeutral, nil
+// GetVotes returns the up and down votes as well as the vote of the user
+func (v VoteModel) GetVotes(profileID string, userID string) (profileVotes *ProfileVotes, err error) {
+
+	profileOID := ObjectID(profileID)
+	userOID := ObjectID(userID)
+	profileVotes = new(ProfileVotes)
+
+	// 1. get the user's vote
+	if userID != "" {
+		filter := bson.D{
+			{Key: "profileID", Value: profileOID},
+			{Key: "userID", Value: userOID},
+		}
+
+		fields := bson.D{
+			{Key: "_id", Value: 0}, // _id kommt immer, daher explizit ausschalten
+			{Key: "vote", Value: 1},
+		}
+
+		opts := options.FindOne().SetProjection(fields)
+
+		// user vote
+		data := struct {
+			Vote int32 `bson:"vote"`
+		}{VoteNeutral}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel() // nach 10 Sekunden abbrechen
+
+		err = v.Collection.FindOne(ctx, filter, opts).Decode(&data)
+		if err != nil {
+			// it's NOT an error if the user didn't vote
+			if err != mongo.ErrNoDocuments {
+				return nil, helpers.WrapError(err, helpers.FuncName())
+			}
+		}
+		profileVotes.UserVote = data.Vote
+	} else {
+		profileVotes.UserVote = VoteNeutral
+	}
+
+	// 2. count votes for/against profile
+	matchStage := bson.D{
+		{Key: "$match", Value: bson.D{
+			{Key: "$and", Value: bson.A{
+				bson.D{{Key: "profileID", Value: profileOID}},
+			}},
+		}},
+	}
+
+	// https://stackoverflow.com/questions/23116330/mongodb-select-count-group-by
+	groupStage := bson.D{
+		{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$vote"}, // values of "votes" (up/down action)
+			{Key: "count", Value: bson.D{
+				{Key: "$sum", Value: 1},
+			},
+			}},
+		}}
+
+	// ToDo: Hint (to use index)
+	// https://www.unitconverters.net/time/second-to-nanosecond.htm
+	opts := options.Aggregate().SetMaxTime(5000000000) // 5 secs
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel() // nach 10 Sekunden abbrechen
+
+	cursor, err := v.Collection.Aggregate(ctx, mongo.Pipeline{
+		matchStage,
+		groupStage}, opts)
+	if err != nil {
+		return nil, helpers.WrapError(err, helpers.FuncName())
+	}
+
+	var votes []bson.M
+	err = cursor.All(ctx, &votes)
+	if err != nil {
+		// it's NOT an error if there are no votes at all
+		if err != mongo.ErrNoDocuments {
+			return nil, helpers.WrapError(err, helpers.FuncName())
+		}
+	}
+
+	// slice contains a map with values of "_id" and the field "count"
+	for _, v := range votes {
+		switch v["_id"].(int32) {
+		case 1:
+			profileVotes.UpVotes = v["count"].(int32)
+		case -1:
+			profileVotes.DownVotes = v["count"].(int32)
+		}
+	}
+
+	return profileVotes, nil
 }

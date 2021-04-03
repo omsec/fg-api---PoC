@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func Vote(c *gin.Context) {
+func CastVote(c *gin.Context) {
 
 	var (
 		err      error
@@ -44,11 +44,31 @@ func Vote(c *gin.Context) {
 		}
 	*/
 
-	err = environment.Env.VoteModel.Vote(data.ProfileID, userID, data.Vote)
+	err = environment.Env.VoteModel.CastVote(data.ProfileID, userID, data.Vote)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)
 		return
 	}
 
+}
+
+// GetVotes returns the current votes for and against a profile as well as a user's action
+// ToDo: eine public/member URL (gleiche model funktion) wäre sicherer vor manipulation (user aus token lesen)
+// http://localhost:3000/courses/public/6060491beab278c482d04ed8/votes?userId=5feb2473b4d37f7f0285847a
+func GetVotes(c *gin.Context) {
+
+	var (
+		profileId = c.Param("id")
+		userId    = c.Query("userId")
+	)
+
+	profileVotes, err := environment.Env.VoteModel.GetVotes(profileId, userId)
+	if err != nil {
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
+		return
+	}
+
+	c.JSON(http.StatusOK, profileVotes)
 }
