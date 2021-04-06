@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"forza-garage/helpers"
+	"math"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -43,17 +44,17 @@ type VoteModel struct {
 }
 
 // CastVotes is used to vote for/against something (a profile, eg. Course/Championship)
-func (v VoteModel) CastVote(profileOID primitive.ObjectID, userID string, vote int32) error {
+// It also calcalutes the new rating and lower boundary to sort the profiles
+func (v VoteModel) CastVote(profileOID primitive.ObjectID, userID string, vote int32, SetRating func(courseOID primitive.ObjectID, rating float32, sortOrder float32) error) error {
 
 	// Positive | Negative votes will be Upserts
 	// Revokes will be Deletes
 
-	// TODO: Evt. Rating & Sort Order hier berechnen und im Object-Doc speichern
-
-	// ToDo: Prüfen, ob das ObjectID gültig ist? (dann braucht's den Typ als Parameter und alle COllections :-/)
+	// Keine Prüfung, ob das ObjectID gültig ist. (dann braucht's den Typ als Parameter und alle COllections :-/)
 
 	userOID := ObjectID(userID) // ToDo: auf err umstellen (?)
 
+	// 1. save or delete vote
 	if vote != VoteNeutral {
 		usr, err := v.GetUserNameOID(userOID)
 		if err != nil {
@@ -78,7 +79,7 @@ func (v VoteModel) CastVote(profileOID primitive.ObjectID, userID string, vote i
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel() // nach 10 Sekunden abbrechen
 
-		// not int32eressted in actual result
+		// not interessted in actual result
 		_, err = v.Collection.UpdateOne(ctx, filter, fields, opts)
 		if err != nil {
 			return helpers.WrapError(err, helpers.FuncName())
@@ -94,13 +95,41 @@ func (v VoteModel) CastVote(profileOID primitive.ObjectID, userID string, vote i
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel() // nach 10 Sekunden abbrechen
 
-		// not int32eressted in actual result
+		// not interessted in actual result
 		_, err := v.Collection.DeleteOne(ctx, filter)
 		if err != nil {
 			return helpers.WrapError(err, helpers.FuncName())
 		}
-
 	}
+
+	// 2. calculate the new rating and sort order of the profile
+	// reasons for client-side/api implemenation:
+	// 1. speed
+	// 2. complexity of queries
+
+	// https://github.com/omsec/racing-db/blob/master/setup.sql
+	// #441
+
+	up, down, err := v.countVotes(profileOID)
+	if err != nil {
+		return err
+	}
+
+	// https://yourbasic.org/golang/round-float-to-int/
+
+	var rating float32 = 0
+	var ratingSort float32 = 0
+
+	upVotes := float64(up)
+	downVotes := float64(down)
+	totalVotes := upVotes + downVotes
+
+	if upVotes > 0 && totalVotes > 0 {
+		rating = float32(math.Round(float64((((upVotes/totalVotes)*4)+1)*2) / 2))
+		ratingSort = float32((upVotes+1.9208)/totalVotes - 1.96*math.Sqrt((upVotes*downVotes)/totalVotes+0.9604)/totalVotes/(1+3.8416/totalVotes)) // lower bound
+	}
+
+	SetRating(profileOID, rating, ratingSort)
 
 	return nil
 }
@@ -147,6 +176,14 @@ func (v VoteModel) GetVotes(profileID string, userID string) (profileVotes *Prof
 	}
 
 	// 2. count votes for/against profile
+	profileVotes.UpVotes, profileVotes.DownVotes, err = v.countVotes(profileOID)
+
+	return profileVotes, nil
+}
+
+// count the actual votes for/against a profile
+func (v VoteModel) countVotes(profileOID primitive.ObjectID) (up int32, down int32, err error) {
+
 	matchStage := bson.D{
 		{Key: "$match", Value: bson.D{
 			{Key: "$and", Value: bson.A{
@@ -176,7 +213,7 @@ func (v VoteModel) GetVotes(profileID string, userID string) (profileVotes *Prof
 		matchStage,
 		groupStage}, opts)
 	if err != nil {
-		return nil, helpers.WrapError(err, helpers.FuncName())
+		return VoteNeutral, VoteNeutral, helpers.WrapError(err, helpers.FuncName())
 	}
 
 	var votes []bson.M
@@ -184,7 +221,7 @@ func (v VoteModel) GetVotes(profileID string, userID string) (profileVotes *Prof
 	if err != nil {
 		// it's NOT an error if there are no votes at all
 		if err != mongo.ErrNoDocuments {
-			return nil, helpers.WrapError(err, helpers.FuncName())
+			return VoteNeutral, VoteNeutral, helpers.WrapError(err, helpers.FuncName())
 		}
 	}
 
@@ -192,11 +229,11 @@ func (v VoteModel) GetVotes(profileID string, userID string) (profileVotes *Prof
 	for _, v := range votes {
 		switch v["_id"].(int32) {
 		case 1:
-			profileVotes.UpVotes = v["count"].(int32)
+			up = v["count"].(int32)
 		case -1:
-			profileVotes.DownVotes = v["count"].(int32)
+			down = v["count"].(int32)
 		}
 	}
 
-	return profileVotes, nil
+	return up, down, nil
 }

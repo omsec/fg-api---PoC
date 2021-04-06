@@ -67,10 +67,6 @@ func handleRequests() {
 	router.GET("/stats/visits", controllers.GetVisits)
 	router.GET("/stats/visitors", authentication.TokenAuthMiddleware(), controllers.ListVisitors)
 
-	// voting
-	// alternative: /course/vote (post) /course/votes (get)
-	router.POST("/vote/cast", authentication.TokenAuthMiddleware(), controllers.CastVote)
-
 	// course
 	// GET hat keinen BODY (Go/Gin & Postman unterstützen das zwar, Angular nicht) - deshalb Parameter
 	// https://xspdf.com/resolution/58530870.html
@@ -82,7 +78,12 @@ func handleRequests() {
 	router.PUT("/courses/:id", authentication.TokenAuthMiddleware(), controllers.UpdateCourse)
 	// ToDO: Delete
 	// voting
-	router.GET("/courses/public/:id/votes", controllers.GetVotes)
+	// for the sake of security I've created a public and a private endpoint, where the user is read from
+	// the token, which is not present/necessary in the open one; again, they're handled by the same model
+	// function, but different controllers
+	router.GET("/courses/public/:id/votes", controllers.GetVotesPublic)
+	router.GET("/courses/member/:id/votes", authentication.TokenAuthMiddleware(), controllers.GetVotesMember)
+	router.POST("/course/vote", authentication.TokenAuthMiddleware(), controllers.CastVoteCourse)
 
 	// logics
 	router.POST("/course/exists", authentication.TokenAuthMiddleware(), controllers.ExistsForzaShare) // protected to prevent sniffs ;-)

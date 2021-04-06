@@ -210,6 +210,7 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams, userID strin
 	}
 
 	sort := bson.D{
+		{Key: "metaInfo.ratingSort", Value: -1},
 		{Key: "metaInfo.rating", Value: -1},
 		{Key: "metaInfo.touchedTS", Value: -1},
 	}
@@ -554,6 +555,33 @@ func (m CourseModel) UpdateCourse(course *Course, userID string) error {
 	}
 
 	// ToDO: überlegen - rückgsabewerte sinnvoll? (z. B. timestamp? oder die ID analog add?)
+	return nil
+}
+
+// SetRating is called by the voting model
+func (m CourseModel) SetRating(courseOID primitive.ObjectID, rating float32, sortOrder float32) error {
+
+	// set fields to be possibily updated
+	fields := bson.D{
+		// systemfields
+		{Key: "$set", Value: bson.D{{Key: "metaInfo.rating", Value: rating}}},
+		{Key: "$set", Value: bson.D{{Key: "metaInfo.ratingSort", Value: sortOrder}}},
+	}
+
+	filter := bson.D{{Key: "_id", Value: courseOID}}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel() // nach 10 Sekunden abbrechen
+
+	result, err := m.Collection.UpdateOne(ctx, filter, fields)
+	if err != nil {
+		return helpers.WrapError(err, helpers.FuncName())
+	}
+
+	if result.MatchedCount == 0 {
+		return apperror.ErrNoData // document might have been deleted
+	}
+
 	return nil
 }
 

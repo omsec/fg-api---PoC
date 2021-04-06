@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"fmt"
 	"forza-garage/authentication"
 	"forza-garage/environment"
 	"forza-garage/models"
@@ -10,7 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func CastVote(c *gin.Context) {
+// CastVote registers a new vote or removes a revoked one. It also calcalutes the new rating and lower boundary to sort the profiles
+func CastVoteCourse(c *gin.Context) {
 
 	var (
 		err      error
@@ -27,7 +27,6 @@ func CastVote(c *gin.Context) {
 
 	// use "shouldBind" not all fields are required in this context
 	if err = c.Bind(&data); err != nil {
-		fmt.Println("ress")
 		apiError.Code = InvalidJSON
 		apiError.Message = apiError.String(apiError.Code)
 		c.JSON(http.StatusUnprocessableEntity, apiError)
@@ -44,7 +43,7 @@ func CastVote(c *gin.Context) {
 		}
 	*/
 
-	err = environment.Env.VoteModel.CastVote(data.ProfileID, userID, data.Vote)
+	err = environment.Env.VoteModel.CastVote(data.ProfileID, userID, data.Vote, environment.Env.CourseModel.SetRating)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)
@@ -53,17 +52,37 @@ func CastVote(c *gin.Context) {
 
 }
 
-// GetVotes returns the current votes for and against a profile as well as a user's action
-// ToDo: eine public/member URL (gleiche model funktion) wäre sicherer vor manipulation (user aus token lesen)
-// http://localhost:3000/courses/public/6060491beab278c482d04ed8/votes?userId=5feb2473b4d37f7f0285847a
-func GetVotes(c *gin.Context) {
+// GetVotesPublic returns the current votes for and against a profile
+// http://localhost:3000/courses/public/6060491beab278c482d04ed8/votes
+func GetVotesPublic(c *gin.Context) {
 
 	var (
 		profileId = c.Param("id")
-		userId    = c.Query("userId")
 	)
 
-	profileVotes, err := environment.Env.VoteModel.GetVotes(profileId, userId)
+	profileVotes, err := environment.Env.VoteModel.GetVotes(profileId, "")
+	if err != nil {
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
+		return
+	}
+
+	c.JSON(http.StatusOK, profileVotes)
+}
+
+// GetVotesMember returns the current votes for and against a profile as well as a user's action
+// http://localhost:3000/courses/member/6060491beab278c482d04ed8/votes
+func GetVotesMember(c *gin.Context) {
+
+	var profileId = c.Param("id")
+
+	userID, err := authentication.Authenticate(c.Request)
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	profileVotes, err := environment.Env.VoteModel.GetVotes(profileId, userID)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)
