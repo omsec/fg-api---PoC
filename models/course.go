@@ -2,7 +2,6 @@ package models
 
 import (
 	"context"
-	"forza-garage/analytics"
 	"forza-garage/apperror"
 	"forza-garage/database"
 	"forza-garage/helpers"
@@ -97,7 +96,6 @@ type CourseModel struct {
 	GetUserName func(ID string) (string, error)
 	// ToDo: halt umbennen GetCredentials
 	CredentialsReader func(userId string, loadFriendlist bool) *Credentials
-	Tracker           *analytics.Tracker
 }
 
 // Models do not change original values passed by the controllers, but return new structures
@@ -189,8 +187,6 @@ func (m CourseModel) CreateCourse(course *Course, userID string) (string, error)
 
 // SearchCourses lists or searches course (ohne Comments, aber mit Files/Tags)
 func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams, userID string) ([]CourseListItem, error) {
-
-	m.Tracker.SaveSearch("course", searchSpecs.GameCode, searchSpecs.SeriesCodes, searchSpecs.SearchTerm, userID)
 
 	// CourseListeItem: Verkleinerte/vereinfachte Struktur für Listen
 	// MongoDB muss eine passende Struktur erhalten um die Daten aufzunehmen (z. B. mit nested Arrays)
@@ -425,8 +421,6 @@ func (m CourseModel) GetCourse(courseID string, userID string) (*Course, error) 
 	if err != nil {
 		return nil, apperror.ErrNoData
 	}
-
-	m.Tracker.SaveVisitor("course", courseID, userID)
 
 	data := Course{}
 

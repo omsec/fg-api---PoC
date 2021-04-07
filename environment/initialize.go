@@ -2,6 +2,7 @@ package environment
 
 import (
 	"forza-garage/analytics"
+	"forza-garage/client"
 	"forza-garage/database"
 	"forza-garage/models"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 // Environment is used for dependency-injection (package de-coupling)
 type Environment struct {
+	Requests    *client.Registry
 	Tracker     *analytics.Tracker
 	UserModel   models.UserModel
 	VoteModel   models.VoteModel
@@ -24,20 +26,26 @@ func newEnv(mongoClient *mongo.Client, influxClient *influxdb2.Client) *Environm
 
 	// ToDO: mongoClient für Modelle entfernen
 
+	// keep track of clients and their last requests
+	env.Requests = new(client.Registry)
+	env.Requests.Initialize()
+
 	// prepare analytics gathering (profile visits)
 	// always create the object so no futher checking is needed in the models
 	env.Tracker = new(analytics.Tracker)
 	env.Tracker.SetConnections(
 		influxClient, // brauchts nicht mehr hier
 		mongoClient.Database(os.Getenv("DB_NAME")).Collection("analytics"))
-	// weil pointer umweg über varIABLE
+	// weil pointer umweg über variable
 	fluxClient := *influxClient
+	// ToDO: evtl. wäre eine Set-Funktion schöner
 	env.Tracker.VisitorAPI.WriteAPI = fluxClient.WriteAPIBlocking(os.Getenv("ANALYTICS_ORG"), os.Getenv("ANALYTICS_VISITORS_BUCKET"))
 	env.Tracker.VisitorAPI.QueryAPI = fluxClient.QueryAPI(os.Getenv("ANALYTICS_ORG"))
 	env.Tracker.VisitorAPI.DeleteAPI = fluxClient.DeleteAPI()
 	env.Tracker.SearchAPI.WriteAPI = fluxClient.WriteAPIBlocking(os.Getenv("ANALYTICS_ORG"), os.Getenv("ANALYTICS_SEARCHES_BUCKET"))
 	env.Tracker.SearchAPI.QueryAPI = fluxClient.QueryAPI(os.Getenv("ANALYTICS_ORG"))
 	// no deletes required for search bucket (TTL set)
+	env.Tracker.Requests = env.Requests
 
 	env.UserModel.Client = mongoClient
 	env.UserModel.Collection = mongoClient.Database(os.Getenv("DB_NAME")).Collection("users") // ToDO: Const
@@ -56,7 +64,7 @@ func newEnv(mongoClient *mongo.Client, influxClient *influxdb2.Client) *Environm
 	env.CourseModel.GetUserName = env.UserModel.GetUserName
 	env.CourseModel.CredentialsReader = env.UserModel.GetCredentials
 	// inject analytics
-	env.CourseModel.Tracker = env.Tracker
+	// env.CourseModel.Tracker = env.Tracker
 
 	return env
 }

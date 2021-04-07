@@ -9,6 +9,7 @@ import (
 	"forza-garage/middleware"
 	"log"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -39,7 +40,7 @@ func handleRequests() {
 
 	// auth-related
 	router.POST("/login", controllers.Login)
-	router.POST("/logout", authentication.TokenAuthMiddleware(), controllers.Logout) // DELETE in Vorlage (Achtung Server-Rechte)
+	router.POST("/logout", authentication.TokenAuthMiddleware(), controllers.Logout) // DELETE in Vorlage (umstritten)
 	router.POST("/refresh", controllers.Refresh)                                     // nicht prüfen, ob das at noch valide ist (keine Middleware)
 	router.POST("/register", controllers.Register)
 
@@ -63,7 +64,7 @@ func handleRequests() {
 
 	router.GET("/users/:id/followers", authentication.TokenAuthMiddleware(), controllers.GetFollowers)
 
-	// analytics
+	// analytics -- ToDo: nested URL, set obj type via controller GetVisitsCourse
 	router.GET("/stats/visits", controllers.GetVisits)
 	router.GET("/stats/visitors", authentication.TokenAuthMiddleware(), controllers.ListVisitors)
 
@@ -128,6 +129,25 @@ func main() {
 	// Inject DB-Connections to models
 	environment.InitializeModels()
 
+	// we're keeping track client requests to control certain endpoints
+	// hence we need to frequently shrink the list of recent requests
+	requestTicker := time.NewTicker(time.Duration(1 * time.Minute)) // 5 * time.Second
+	done := make(chan bool, 1)                                      // done channel can be shared, it's only used to stop the listener (select-loop)
+
+	if os.Getenv("USE_ANALYTICS") == "YES" {
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				//case t := <-ticker.C:
+				case <-requestTicker.C:
+					environment.Env.Requests.Flush()
+				}
+			}
+		}()
+	}
+
 	// replicate profile visit log from cache to db
 	/*
 		replMins, err := strconv.Atoi(os.Getenv("ANALYTICS_REPLICATION_MINUTES"))
@@ -155,8 +175,7 @@ func main() {
 	fmt.Println("Forza-Garage running...")
 	handleRequests()
 
-	/*
-		ticker.Stop()
-		done <- true
-	*/
+	requestTicker.Stop()
+	done <- true
+
 }

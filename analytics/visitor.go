@@ -3,6 +3,7 @@ package analytics
 import (
 	"context"
 	"fmt"
+	"forza-garage/client"
 	"forza-garage/database"
 	"forza-garage/helpers"
 	"forza-garage/lookups"
@@ -21,6 +22,7 @@ type Tracker struct {
 	collection   *mongo.Collection
 	GetUserName  func(ID string) (string, error)
 	// GetUserNameOID func(userID primitive.ObjectID) (string, error) // war für alte Lösung
+	Requests *client.Registry
 }
 
 type Visit struct {

@@ -135,7 +135,14 @@ func ListCoursesPublic(c *gin.Context) {
 		return
 	}
 
+	// fmt.Println(c.Request.Header)
+
+	// fmt.Println(c.ClientIP())
+
 	c.JSON(http.StatusOK, courses)
+
+	// log the request
+	environment.Env.Tracker.SaveSearch("course", search.GameCode, search.SeriesCodes, search.SearchTerm, userID)
 }
 
 // ListCoursesMember returns a list of racing tracks for logged-in users
@@ -230,6 +237,9 @@ func ListCoursesMember(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, courses)
+
+	// log the request
+	environment.Env.Tracker.SaveSearch("course", search.GameCode, search.SeriesCodes, search.SearchTerm, userID)
 }
 
 // GetCoursePublic returns the specified track
@@ -276,6 +286,11 @@ func GetCoursePublic(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, data)
+
+	// log this request, if it was a new one
+	if environment.Env.Requests.Continue(c.Request.RemoteAddr, id) {
+		environment.Env.Tracker.SaveVisitor("course", id, userID)
+	}
 }
 
 func GetCourseMember(c *gin.Context) {
@@ -324,6 +339,11 @@ func GetCourseMember(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, data)
+
+	// log this request, if it was a new one
+	if environment.Env.Requests.Continue(c.Request.RemoteAddr, id) {
+		environment.Env.Tracker.SaveVisitor("course", id, userID)
+	}
 }
 
 // UpdateCourse modifies "core" fields
