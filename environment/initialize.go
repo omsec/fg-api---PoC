@@ -39,10 +39,10 @@ func newEnv(mongoClient *mongo.Client, influxClient *influxdb2.Client) *Environm
 	// weil pointer umweg über variable
 	fluxClient := *influxClient
 	// ToDO: evtl. wäre eine Set-Funktion schöner
-	env.Tracker.VisitorAPI.WriteAPI = fluxClient.WriteAPIBlocking(os.Getenv("ANALYTICS_ORG"), os.Getenv("ANALYTICS_VISITORS_BUCKET"))
+	env.Tracker.VisitorAPI.WriteAPI = fluxClient.WriteAPI(os.Getenv("ANALYTICS_ORG"), os.Getenv("ANALYTICS_VISITORS_BUCKET"))
 	env.Tracker.VisitorAPI.QueryAPI = fluxClient.QueryAPI(os.Getenv("ANALYTICS_ORG"))
 	env.Tracker.VisitorAPI.DeleteAPI = fluxClient.DeleteAPI()
-	env.Tracker.SearchAPI.WriteAPI = fluxClient.WriteAPIBlocking(os.Getenv("ANALYTICS_ORG"), os.Getenv("ANALYTICS_SEARCHES_BUCKET"))
+	env.Tracker.SearchAPI.WriteAPI = fluxClient.WriteAPI(os.Getenv("ANALYTICS_ORG"), os.Getenv("ANALYTICS_SEARCHES_BUCKET"))
 	env.Tracker.SearchAPI.QueryAPI = fluxClient.QueryAPI(os.Getenv("ANALYTICS_ORG"))
 	// no deletes required for search bucket (TTL set)
 	env.Tracker.Requests = env.Requests

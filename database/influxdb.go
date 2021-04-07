@@ -11,7 +11,7 @@ import (
 
 type InfluxAPI struct {
 	// https://github.com/influxdata/influxdb-client-go
-	WriteAPI  api.WriteAPIBlocking // ToDo: auf non-blocking umstellen
+	WriteAPI  api.WriteAPI
 	QueryAPI  api.QueryAPI
 	DeleteAPI api.DeleteAPI
 }

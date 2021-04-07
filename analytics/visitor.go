@@ -9,6 +9,7 @@ import (
 	"forza-garage/lookups"
 	"math"
 	"os"
+	"sort"
 	"time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go"
@@ -72,7 +73,7 @@ func (t *Tracker) SaveVisitor(objectType string, objectID string, userID string)
 		time.Now())
 
 	// ToDo: log Error
-	t.VisitorAPI.WriteAPI.WritePoint(context.Background(), p)
+	t.VisitorAPI.WriteAPI.WritePoint(p)
 
 }
 
@@ -110,7 +111,7 @@ func (t *Tracker) SaveSearch(domain string, gameCode int32, seriesCodes []int32,
 		time.Now())
 
 	// ToDo: log Error
-	t.SearchAPI.WriteAPI.WritePoint(context.Background(), p)
+	t.SearchAPI.WriteAPI.WritePoint(p)
 
 }
 
@@ -245,6 +246,12 @@ func (t *Tracker) ListVisitors(objectType string, objectID string, startDT time.
 
 		visits = append(visits, visit)
 	}
+
+	// das flux query ist zumindest im GUI richtig sortiert, das slice kommt aber anders daher
+	// https://he-the-great.livejournal.com/49072.html
+	sort.Slice(visits, func(i, j int) bool {
+		return visits[j].VisitTS.Before(visits[i].VisitTS)
+	})
 
 	return visits, nil
 

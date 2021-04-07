@@ -29,6 +29,7 @@ func init() {
 	}
 }
 
+// ToDO: move this function into its own file
 func handleRequests() {
 	router.Use(middleware.CORSMiddleware())
 
@@ -129,24 +130,22 @@ func main() {
 	// Inject DB-Connections to models
 	environment.InitializeModels()
 
-	// we're keeping track client requests to control certain endpoints
+	// we're keeping track of client requests to control certain endpoints
 	// hence we need to frequently shrink the list of recent requests
 	requestTicker := time.NewTicker(time.Duration(1 * time.Minute)) // 5 * time.Second
 	done := make(chan bool, 1)                                      // done channel can be shared, it's only used to stop the listener (select-loop)
 
-	if os.Getenv("USE_ANALYTICS") == "YES" {
-		go func() {
-			for {
-				select {
-				case <-done:
-					return
-				//case t := <-ticker.C:
-				case <-requestTicker.C:
-					environment.Env.Requests.Flush()
-				}
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			//case t := <-ticker.C:
+			case <-requestTicker.C:
+				environment.Env.Requests.Flush()
 			}
-		}()
-	}
+		}
+	}()
 
 	// replicate profile visit log from cache to db
 	/*
@@ -174,6 +173,11 @@ func main() {
 
 	fmt.Println("Forza-Garage running...")
 	handleRequests()
+
+	// save pending analytics to influxDB
+	// placed here, because defer causes NIL panic
+	environment.Env.Tracker.VisitorAPI.WriteAPI.Flush()
+	environment.Env.Tracker.SearchAPI.WriteAPI.Flush()
 
 	requestTicker.Stop()
 	done <- true
