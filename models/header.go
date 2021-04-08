@@ -19,6 +19,7 @@ type Header struct {
 	RatingSort   float32            `json:"ratingSort" bson:"ratingSort"` // calculated by the voting function & persisted (lowerBound)
 	TouchedTS    time.Time          `json:"touchedTS" bson:"touchedTS"`   // de-norm of many sources (maybe nested or referenced)
 	RecVer       int64              `json:"recVer" bson:"recVer"`         // optimistic locking (update, delete) - starts with 1 (by .Add)
+	Visits       int64              `json:"visits" bson:"visits"`         // total amount replicated from analytics store
 }
 
 // SmallHeader is used for embedded content, such as comments or file references (arrays)
@@ -27,5 +28,6 @@ type SmallHeader struct {
 	CreatedID   primitive.ObjectID `json:"createdID" bson:"createdID"`
 	CreatedName string             `json:"createdName" bson:"createdName"`
 	ModifiedTS  time.Time          `json:"modifiedTS" bson:"modifiedTS,omitempty"`
-	Rating      float32            `json:"rating" bson:"rating"` // calculated & persisted (sorting, usually not shown in clients)
+	Rating      float32            `json:"rating" bson:"rating"`         // calculated & persisted (sorting, usually not shown in clients)
+	RatingSort  float32            `json:"ratingSort" bson:"ratingSort"` // calculated by the voting function & persisted (lowerBound)
 }

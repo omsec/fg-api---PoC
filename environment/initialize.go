@@ -35,7 +35,7 @@ func newEnv(mongoClient *mongo.Client, influxClient *influxdb2.Client) *Environm
 	env.Tracker = new(analytics.Tracker)
 	env.Tracker.SetConnections(
 		influxClient, // brauchts nicht mehr hier
-		mongoClient.Database(os.Getenv("DB_NAME")).Collection("analytics"))
+		mongoClient.Database(os.Getenv("DB_NAME")).Collection("racing")) // ToDo: map of collections
 	// weil pointer umweg über variable
 	fluxClient := *influxClient
 	// ToDO: evtl. wäre eine Set-Funktion schöner

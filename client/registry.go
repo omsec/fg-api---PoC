@@ -28,6 +28,9 @@ func (r Registry) Initialize() {
 
 func (r Registry) Continue(client string, profileID string) bool {
 
+	// ToDo:
+	// vielleicht das risiko eingehen und hier ohne lock zugreifen
+
 	// combination of client & url found = this was a page refresh
 	registry.RLock()
 	found := !(registry.requests[client].ProfileID == profileID)

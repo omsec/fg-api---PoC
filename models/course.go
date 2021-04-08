@@ -153,7 +153,7 @@ func (m CourseModel) CreateCourse(course *Course, userID string) (string, error)
 	// set "system-fields"
 	course.ID = primitive.NewObjectID()
 	// course.MetaInfo.CreatedTS set by ID via OID
-	course.MetaInfo.CreatedID = ObjectID(userID)
+	course.MetaInfo.CreatedID = database.ObjectID(userID)
 	userName, err := m.GetUserName(userID) // ToDo: Sollte direkt ObjhectID nehmen, 1 cast weniger
 	if err != nil {
 		// Fachlicher Fehler oder bereits wrapped

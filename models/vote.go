@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"forza-garage/database"
 	"forza-garage/helpers"
 	"math"
 	"time"
@@ -52,7 +53,7 @@ func (v VoteModel) CastVote(profileOID primitive.ObjectID, userID string, vote i
 
 	// Keine Prüfung, ob das ObjectID gültig ist. (dann braucht's den Typ als Parameter und alle COllections :-/)
 
-	userOID := ObjectID(userID) // ToDo: auf err umstellen (?)
+	userOID := database.ObjectID(userID) // ToDo: auf err umstellen (?)
 
 	// 1. save or delete vote
 	if vote != VoteNeutral {
@@ -137,8 +138,8 @@ func (v VoteModel) CastVote(profileOID primitive.ObjectID, userID string, vote i
 // GetVotes returns the up and down votes as well as the vote of the user
 func (v VoteModel) GetVotes(profileID string, userID string) (profileVotes *ProfileVotes, err error) {
 
-	profileOID := ObjectID(profileID)
-	userOID := ObjectID(userID)
+	profileOID := database.ObjectID(profileID)
+	userOID := database.ObjectID(userID)
 	profileVotes = new(ProfileVotes)
 
 	// 1. get the user's vote

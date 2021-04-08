@@ -10,10 +10,13 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type Tracker struct {
@@ -201,7 +204,6 @@ func (t *Tracker) ListVisitors(objectType string, objectID string, startDT time.
 	}
 
 	// 10 letzte Besucher (nur letzter Besuch pro Benutzer)
-	// die records werden trotzdem nach _value (userId) sortiert - das müsste wohl im client korrigiert werden
 	flux := `from(bucket: "%s")
 		|> range(start: %s)
 		|> filter(fn: (r) => r["_measurement"] == "visit" and r["profileId"] == "%s")
@@ -360,8 +362,83 @@ func (t *Tracker) Replicate() {
 	// älter 30 tage
 	// summiere in MongoDB (oid, count)
 
-	// 3. save visits into MongoDB (wieder einbauen)
+	// 1. get counts from influxDB
 
+	/*
+		from(bucket: "fg-visits")
+				|> range(start: 2021-01-01T00:00:00Z, stop: -30d) // just start somewhere as the minimum date
+				|> filter(fn: (r) => r["_measurement"] == "visit")
+				|> count()
+				|> yield(name: "count")
+	*/
+
+	// -30d!
+	flux := `from(bucket: "%s")
+	|> range(start: 2021-01-01T00:00:00Z, stop: -1d) // just start somewhere as the minimum date
+	|> filter(fn: (r) => r["_measurement"] == "visit")
+	|> count()
+	|> yield(name: "count")`
+
+	flux = fmt.Sprintf(
+		flux,
+		os.Getenv("ANALYTICS_VISITORS_BUCKET"))
+
+	result, err := t.SearchAPI.QueryAPI.Query(context.Background(), flux)
+	if err != nil {
+		// ToDO: Log Error helpers.WrapError(err, helpers.FuncName())
+		fmt.Println(helpers.WrapError(err, helpers.FuncName()))
+		return
+	}
+
+	// 2. save counts to MongoDB (bulk)
+	// ToDo: receive map of collections and handle them
+
+	// https://docs.mongodb.com/manual/reference/method/db.collection.bulkWrite/
+	// https://pkg.go.dev/go.mongodb.org/mongo-driver/mongo#Collection.BulkWrite
+
+	// https://stackoverflow.com/questions/58538657/golang-mongodb-bulkwrite-to-update-slice-of-documents
+
+	// create a slice of documents in the form of
+	// updateOne: filter ... update.. set
+
+	var opModels []mongo.WriteModel
+	var operation bson.D
+
+	var strs []string
+	for result.Next() {
+		// create a document and a write model for each record
+		strs = strings.Split(result.Record().ValueByKey("profileId").(string), "_")
+
+		// {Key: "$inc", Value: bson.D{{Key: "metaInfo.recVer", Value: 1}}}, // increase record version no
+		operation = bson.D{
+			{Key: "$inc", Value: bson.D{
+				{Key: "metaInfo.visits", Value: result.Record().Value()},
+			}},
+		}
+
+		opModel := mongo.NewUpdateOneModel()
+		opModel.SetFilter(bson.D{{Key: "_id", Value: database.ObjectID(strs[1])}}).SetUpdate(operation)
+
+		opModels = append(opModels, opModel)
+
+		fmt.Printf("profile: %v, %v: %v\n", strs[0], strs[1], result.Record().Value())
+	}
+
+	opts := options.BulkWrite().SetOrdered(false)
+
+	// not interessted in actual result
+	_, err = t.collection.BulkWrite(context.TODO(), opModels, opts) // context noch unklar, background ist nicht cancellable
+	if err != nil {
+		// ToDO: Log Error helpers.WrapError(err, helpers.FuncName())
+		fmt.Println(helpers.WrapError(err, helpers.FuncName()))
+		return
+	}
+
+	// ToDo: could be logged
+	//fmt.Printf("%v updated documents\n", res.MatchedCount)
+
+	// 3. delete transfered data from influxDB
+	// ToDo
 }
 
 func (t *Tracker) seriesIndicators(seriesCodes []int32) (road float64, dirt float64, cross float64) {
