@@ -26,6 +26,11 @@ func newEnv(mongoClient *mongo.Client, influxClient *influxdb2.Client) *Environm
 
 	// ToDO: mongoClient für Modelle entfernen
 
+	// ToDO: überlegen, ob zentral bei der connection als funktion getCollection
+	mongoCollections := make(map[string]*mongo.Collection)
+	mongoCollections["users"] = mongoClient.Database(os.Getenv("DB_NAME")).Collection("users") // ToDO: const
+	mongoCollections["racing"] = mongoClient.Database(os.Getenv("DB_NAME")).Collection("racing")
+
 	// keep track of clients and their last requests
 	env.Requests = new(client.Registry)
 	env.Requests.Initialize()
@@ -35,7 +40,7 @@ func newEnv(mongoClient *mongo.Client, influxClient *influxdb2.Client) *Environm
 	env.Tracker = new(analytics.Tracker)
 	env.Tracker.SetConnections(
 		influxClient, // brauchts nicht mehr hier
-		mongoClient.Database(os.Getenv("DB_NAME")).Collection("racing")) // ToDo: map of collections
+		mongoCollections)
 	// weil pointer umweg über variable
 	fluxClient := *influxClient
 	// ToDO: evtl. wäre eine Set-Funktion schöner

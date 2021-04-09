@@ -99,6 +99,11 @@ func GetUser(c *gin.Context) {
 	user.Password = ""
 
 	c.JSON(http.StatusOK, &user)
+
+	// log this request, if it was a new one
+	if environment.Env.Requests.Continue(c.Request.RemoteAddr, c.Param("id")) {
+		environment.Env.Tracker.SaveVisitor("user", c.Param("id"), userID)
+	}
 }
 
 // BlockUser adds someone to the user's ignorelist

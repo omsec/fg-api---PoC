@@ -22,7 +22,7 @@ type Tracker struct {
 	influxClient influxdb2.Client
 	VisitorAPI   database.InfluxAPI
 	SearchAPI    database.InfluxAPI
-	collection   *mongo.Collection
+	collections  map[string]*mongo.Collection
 	GetUserName  func(ID string) (string, error)
 	// GetUserNameOID func(userID primitive.ObjectID) (string, error) // war für alte Lösung
 	Requests *client.Registry
@@ -56,9 +56,9 @@ type Visit struct {
 */
 
 // ToDo
-func (t *Tracker) SetConnections(influxClient *influxdb2.Client, mongoCollection *mongo.Collection) {
+func (t *Tracker) SetConnections(influxClient *influxdb2.Client, mongoCollections map[string]*mongo.Collection) {
 	t.influxClient = *influxClient
-	t.collection = mongoCollection
+	t.collections = mongoCollections
 }
 
 // SaveVisitor stores event data in the analytics cache
@@ -413,11 +413,10 @@ func (t *Tracker) Replicate() {
 
 	// https://stackoverflow.com/questions/58538657/golang-mongodb-bulkwrite-to-update-slice-of-documents
 
-	// create a slice of documents in the form of
-	// updateOne: filter ... update.. set
-
-	var opModels []mongo.WriteModel
-	var operation bson.D
+	// create a write model for each collection
+	// some domains (object types) are stored in the same collection, eg. course & championship
+	opModels := make(map[string][]mongo.WriteModel)
+	//var operation bson.D
 
 	/*
 		// used for debugging
@@ -431,7 +430,7 @@ func (t *Tracker) Replicate() {
 	for result.Next() {
 		// create a document and a write model for each record
 
-		operation = bson.D{
+		operation := bson.D{
 			{Key: "$inc", Value: bson.D{
 				{Key: "metaInfo.visits", Value: result.Record().Value()}, // value of the projection function (count)
 			}},
@@ -440,7 +439,14 @@ func (t *Tracker) Replicate() {
 		opModel := mongo.NewUpdateOneModel()
 		opModel.SetFilter(bson.D{{Key: "_id", Value: database.ObjectID(result.Record().ValueByKey("profileId").(string))}}).SetUpdate(operation)
 
-		opModels = append(opModels, opModel)
+		switch result.Record().Field() {
+		case "user":
+			opModels["users"] = append(opModels["user"], opModel)
+		case "course", "championship":
+			opModels["racing"] = append(opModels["racing"], opModel)
+		}
+
+		//opModels = append(opModels, opModel)
 
 		/*
 			// used for debugging
@@ -455,7 +461,7 @@ func (t *Tracker) Replicate() {
 	// fmt.Println(testProfiles)
 
 	// abort if no data to process
-	if opModels == nil {
+	if opModels["users"] == nil && opModels["racing"] == nil {
 		// TODO: Log
 		fmt.Printf("%v: %v profile's visit(s) replicated.", time.Now().Format(time.RFC3339), 0)
 		return
@@ -463,15 +469,29 @@ func (t *Tracker) Replicate() {
 
 	opts := options.BulkWrite().SetOrdered(false)
 
-	res, err := t.collection.BulkWrite(ctx, opModels, opts) // context noch unklar, background ist nicht cancellable
-	if err != nil {
-		// ToDO: Log Error helpers.WrapError(err, helpers.FuncName())
-		fmt.Println(helpers.WrapError(err, helpers.FuncName()))
-		return
+	// process each collection's write models (= update operations)
+
+	var cnt int64 = 0 // total replicated profile's visits
+	if opModels["user"] != nil {
+		res, err := t.collections["user"].BulkWrite(ctx, opModels["user"], opts) // context noch unklar, background ist nicht cancellable
+		if err != nil {
+			// ToDO: Log Error helpers.WrapError(err, helpers.FuncName())
+			fmt.Println(helpers.WrapError(err, helpers.FuncName()))
+		}
+		cnt = res.MatchedCount
+	}
+
+	if opModels["racing"] != nil {
+		res, err := t.collections["racing"].BulkWrite(ctx, opModels["racing"], opts) // context noch unklar, background ist nicht cancellable
+		if err != nil {
+			// ToDO: Log Error helpers.WrapError(err, helpers.FuncName())
+			fmt.Println(helpers.WrapError(err, helpers.FuncName()))
+		}
+		cnt += res.MatchedCount
 	}
 
 	// ToDo: could be logged
-	fmt.Printf("%v: %v profile's visit(s) replicated.", time.Now().Format(time.RFC3339), res.MatchedCount)
+	fmt.Printf("%v: %v profile's visit(s) replicated.", time.Now().Format(time.RFC3339), cnt)
 
 	// 3. delete transfered data from influxDB
 	err = t.VisitorAPI.DeleteAPI.DeleteWithName(ctx, os.Getenv("ANALYTICS_ORG"), os.Getenv("ANALYTICS_VISITORS_BUCKET"), start, stop, "")
