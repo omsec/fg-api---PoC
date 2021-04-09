@@ -362,6 +362,13 @@ func (t *Tracker) Replicate() {
 	// älter 30 tage
 	// summiere in MongoDB (oid, count)
 
+	ctx := context.Background()
+	// https://golangbyexample.com/create-new-time-instance-go/
+	//start := time.Parse() "2021-01-01T00:00:00Z"
+	start := time.Date(2021, 1, 1, 0, 0, 0, 0, time.Now().UTC().Location()) // just start somewhere as the minimum date
+	//stop := time.Now().AddDate(0, -1, 0)                                    // subtract 1 month to move everything older than one month
+	stop := time.Now().AddDate(0, 0, -1)
+
 	// 1. get counts from influxDB
 
 	/*
@@ -372,18 +379,19 @@ func (t *Tracker) Replicate() {
 				|> yield(name: "count")
 	*/
 
-	// -30d!
 	flux := `from(bucket: "%s")
-	|> range(start: 2021-01-01T00:00:00Z, stop: -1d) // just start somewhere as the minimum date
+	|> range(start: %s, stop: %s) // use pre-calculated stop because delete-api needs time
 	|> filter(fn: (r) => r["_measurement"] == "visit")
 	|> count()
 	|> yield(name: "count")`
 
 	flux = fmt.Sprintf(
 		flux,
-		os.Getenv("ANALYTICS_VISITORS_BUCKET"))
+		os.Getenv("ANALYTICS_VISITORS_BUCKET"),
+		start.Format(time.RFC3339),
+		stop.Format(time.RFC3339))
 
-	result, err := t.SearchAPI.QueryAPI.Query(context.Background(), flux)
+	result, err := t.SearchAPI.QueryAPI.Query(ctx, flux)
 	if err != nil {
 		// ToDO: Log Error helpers.WrapError(err, helpers.FuncName())
 		fmt.Println(helpers.WrapError(err, helpers.FuncName()))
@@ -424,10 +432,16 @@ func (t *Tracker) Replicate() {
 		fmt.Printf("profile: %v, %v: %v\n", strs[0], strs[1], result.Record().Value())
 	}
 
+	// abort if no data to process
+	if opModels == nil {
+		// TODO: Log
+		fmt.Printf("%v: %v profile's visit(s) replicated.", time.Now().Format(time.RFC3339), 0)
+		return
+	}
+
 	opts := options.BulkWrite().SetOrdered(false)
 
-	// not interessted in actual result
-	_, err = t.collection.BulkWrite(context.TODO(), opModels, opts) // context noch unklar, background ist nicht cancellable
+	res, err := t.collection.BulkWrite(ctx, opModels, opts) // context noch unklar, background ist nicht cancellable
 	if err != nil {
 		// ToDO: Log Error helpers.WrapError(err, helpers.FuncName())
 		fmt.Println(helpers.WrapError(err, helpers.FuncName()))
@@ -435,10 +449,16 @@ func (t *Tracker) Replicate() {
 	}
 
 	// ToDo: could be logged
-	//fmt.Printf("%v updated documents\n", res.MatchedCount)
+	fmt.Printf("%v: %v profile's visit(s) replicated.", time.Now().Format(time.RFC3339), res.MatchedCount)
 
 	// 3. delete transfered data from influxDB
-	// ToDo
+	err = t.VisitorAPI.DeleteAPI.DeleteWithName(ctx, os.Getenv("ANALYTICS_ORG"), os.Getenv("ANALYTICS_VISITORS_BUCKET"), start, stop, "")
+	if err != nil {
+		// ToDo: Log "real" (severe) error
+		fmt.Println("ERROR: could not delete data in influxDB that was already written to MongoDB => duplicated/high values")
+		return
+	}
+
 }
 
 func (t *Tracker) seriesIndicators(seriesCodes []int32) (road float64, dirt float64, cross float64) {

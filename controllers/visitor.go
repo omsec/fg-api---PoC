@@ -37,6 +37,7 @@ func GetVisits(c *gin.Context) {
 		startDT = time.Now().AddDate(0, 0, -7)
 		// https://stackoverflow.com/questions/36988681/time-time-round-to-day
 		//startDT = time.Date(startDT.Year(), startDT.Month(), startDT.Day(), 0, 0, 0, 0, startDT.Location())
+		// Todo: Warum hier 2x ? weis nicht mehr..
 		startDT = time.Date(startDT.Year(), startDT.Month(), startDT.Day(), 0, 0, 0, 0, startDT.UTC().Location())
 	} else {
 		// https://forum.golangbridge.org/t/convert-string-to-date-in-yyyy-mm-dd-format/6026/2
