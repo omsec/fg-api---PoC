@@ -10,7 +10,6 @@ import (
 	"math"
 	"os"
 	"sort"
-	"strings"
 	"time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go"
@@ -63,16 +62,20 @@ func (t *Tracker) SetConnections(influxClient *influxdb2.Client, mongoCollection
 }
 
 // SaveVisitor stores event data in the analytics cache
-func (t *Tracker) SaveVisitor(objectType string, objectID string, userID string) {
+func (t *Tracker) SaveVisitor(domain string, profileID string, userID string) {
 
 	if os.Getenv("USE_ANALYTICS") != "YES" {
 		return
 	}
 
+	fields := map[string]interface{}{
+		"domain": domain, // course, championship, user...
+		"userId": userID}
+
 	p := influxdb2.NewPoint(
 		"visit",
-		map[string]string{"profileId": objectType + "_" + objectID},
-		map[string]interface{}{"userId": userID},
+		map[string]string{"profileId": profileID}, // used as key, taking the risk of high volume/mem needs
+		fields,
 		time.Now())
 
 	// ToDo: log Error
@@ -118,28 +121,30 @@ func (t *Tracker) SaveSearch(domain string, gameCode int32, seriesCodes []int32,
 
 }
 
-// GetVisits reads peristed visitor data from the database
-func (t *Tracker) GetVisits(objectType string, objectID string, startDT time.Time) (int64, error) {
+// GetVisits counts the number of visits of a profile
+// the value is "live" - meaning it's read from the analytics cache (influxDB)
+// which is set to a maximum period (TTL) of 30 days
+// creators and admins may receive the total counts which is added by the MongoDB information (different, protected endpoint)
+func (t *Tracker) GetVisits(profileID string, startDT time.Time) (int64, error) {
 
 	// zum testen auskommentieren
 	if os.Getenv("USE_ANALYTICS") != "YES" {
 		return -1, nil
 	}
 
-	// evtl. nur Visits today - total count für owner
-
+	// since there are multiple fields in the measurement/point
+	// it's required to filter for one field, so we will receive just one record in the loop
 	flux := `from(bucket: "%s")
 		|> range(start: %s)
-		|> filter(fn: (r) => r["_measurement"] == "visit" and r["profileId"] == "%s")
+		|> filter(fn: (r) => r["_measurement"] == "visit" and r["profileId"] == "%s" and r["_field"] == "domain")
 		|> count()
 		|> yield(name: "count")`
 
-	id := objectType + "_" + objectID
 	flux = fmt.Sprintf(
 		flux,
 		os.Getenv("ANALYTICS_VISITORS_BUCKET"),
 		startDT.Format(time.RFC3339),
-		id)
+		profileID)
 
 	result, err := t.SearchAPI.QueryAPI.Query(context.Background(), flux)
 	if err != nil {
@@ -196,7 +201,7 @@ func (t *Tracker) GetVisits(objectType string, objectID string, startDT time.Tim
 // noch überlegen, wie anwenden, evtl. eine "stats"-seite für den user (link via usr-prile)
 // die würde dann alles zeigen, was von diesem autor erstellt wurde (params somit anpassen)
 // ==> vermutlich hier mal eine section, die nur bei Creators und Admins eingeblendet wird.
-func (t *Tracker) ListVisitors(objectType string, objectID string, startDT time.Time, userID string) ([]Visit, error) {
+func (t *Tracker) ListVisitors(profileID string, startDT time.Time, userID string) ([]Visit, error) {
 
 	// zum testen auskommentieren
 	if os.Getenv("USE_ANALYTICS") != "YES" {
@@ -206,7 +211,7 @@ func (t *Tracker) ListVisitors(objectType string, objectID string, startDT time.
 	// 10 letzte Besucher (nur letzter Besuch pro Benutzer)
 	flux := `from(bucket: "%s")
 		|> range(start: %s)
-		|> filter(fn: (r) => r["_measurement"] == "visit" and r["profileId"] == "%s")
+		|> filter(fn: (r) => r["_measurement"] == "visit" and r["profileId"] == "%s" and r["_field"] == "userId")
 		|> group(columns: ["_value"], mode:"by")
 		|> max(column: "_time")
 		|> sort(columns: ["_time"], desc: true)
@@ -221,12 +226,11 @@ func (t *Tracker) ListVisitors(objectType string, objectID string, startDT time.
 		     		|> limit(n:10, offset: 0)`
 	*/
 
-	id := objectType + "_" + objectID
 	flux = fmt.Sprintf(
 		flux,
 		os.Getenv("ANALYTICS_VISITORS_BUCKET"),
 		startDT.Format(time.RFC3339), // 2021-04-01T00:00:00Z
-		id)
+		profileID)
 
 	result, err := t.SearchAPI.QueryAPI.Query(context.Background(), flux)
 	if err != nil {
@@ -237,7 +241,7 @@ func (t *Tracker) ListVisitors(objectType string, objectID string, startDT time.
 	var visits []Visit
 	for result.Next() {
 		visit.VisitTS = result.Record().Time()
-		visit.ObjectID = objectID
+		visit.ObjectID = profileID
 		if result.Record().Value() == nil {
 			visit.UserID = ""
 			visit.UserName = ""
@@ -366,22 +370,25 @@ func (t *Tracker) Replicate() {
 	// https://golangbyexample.com/create-new-time-instance-go/
 	//start := time.Parse() "2021-01-01T00:00:00Z"
 	start := time.Date(2021, 1, 1, 0, 0, 0, 0, time.Now().UTC().Location()) // just start somewhere as the minimum date
-	//stop := time.Now().AddDate(0, -1, 0)                                    // subtract 1 month to move everything older than one month
-	stop := time.Now().AddDate(0, 0, -1)
+	stop := time.Now().AddDate(0, -1, 0)                                    // subtract 1 month to move everything older than one month
+	//stop := time.Now().AddDate(0, 0, -1)
+	//stop := time.Now()
 
 	// 1. get counts from influxDB
 
 	/*
 		from(bucket: "fg-visits")
 				|> range(start: 2021-01-01T00:00:00Z, stop: -30d) // just start somewhere as the minimum date
-				|> filter(fn: (r) => r["_measurement"] == "visit")
+				|> filter(fn: (r) => r["_measurement"] == "visit" and r["_field"] == "domain")
 				|> count()
 				|> yield(name: "count")
 	*/
 
+	// since there are multiple fields in the measurement/point
+	// it's required to filter for one field, so we will receive just one record in the loop
 	flux := `from(bucket: "%s")
 	|> range(start: %s, stop: %s) // use pre-calculated stop because delete-api needs time
-	|> filter(fn: (r) => r["_measurement"] == "visit")
+	|> filter(fn: (r) => r["_measurement"] == "visit" and r["_field"] == "domain")
 	|> count()
 	|> yield(name: "count")`
 
@@ -412,25 +419,40 @@ func (t *Tracker) Replicate() {
 	var opModels []mongo.WriteModel
 	var operation bson.D
 
-	var strs []string
+	/*
+		// used for debugging
+		type testProfile struct {
+			id  string
+			cnt int64
+		}
+		var testProfiles []testProfile
+	*/
+
 	for result.Next() {
 		// create a document and a write model for each record
-		strs = strings.Split(result.Record().ValueByKey("profileId").(string), "_")
 
-		// {Key: "$inc", Value: bson.D{{Key: "metaInfo.recVer", Value: 1}}}, // increase record version no
 		operation = bson.D{
 			{Key: "$inc", Value: bson.D{
-				{Key: "metaInfo.visits", Value: result.Record().Value()},
+				{Key: "metaInfo.visits", Value: result.Record().Value()}, // value of the projection function (count)
 			}},
 		}
 
 		opModel := mongo.NewUpdateOneModel()
-		opModel.SetFilter(bson.D{{Key: "_id", Value: database.ObjectID(strs[1])}}).SetUpdate(operation)
+		opModel.SetFilter(bson.D{{Key: "_id", Value: database.ObjectID(result.Record().ValueByKey("profileId").(string))}}).SetUpdate(operation)
 
 		opModels = append(opModels, opModel)
 
-		fmt.Printf("profile: %v, %v: %v\n", strs[0], strs[1], result.Record().Value())
+		/*
+			// used for debugging
+			// fmt.Printf("profile: %v, %v: %v\n", result.Record().Field(), result.Record().ValueByKey("profileId").(string), result.Record().Value())
+			tp := testProfile{
+				id:  result.Record().ValueByKey("profileId").(string),
+				cnt: result.Record().Value().(int64)}
+			testProfiles = append(testProfiles, tp)
+		*/
 	}
+
+	// fmt.Println(testProfiles)
 
 	// abort if no data to process
 	if opModels == nil {

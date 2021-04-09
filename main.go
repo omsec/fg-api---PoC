@@ -77,8 +77,8 @@ func main() {
 	if err != nil {
 		log.Fatal("Invalid Configuration for env-Value ANALYTICS_REPLICATION_MINUTES")
 	}
-	//replTicker := time.NewTicker(time.Duration(replMins) * time.Minute)
-	replTicker := time.NewTicker(time.Duration(replMins) * 10 * time.Second)
+	replTicker := time.NewTicker(time.Duration(replMins) * time.Minute)
+	//replTicker := time.NewTicker(time.Duration(replMins) * 10 * time.Second)
 	// ToDo: save TS of last replication into a control file
 	// this ensures repl is run even if the server runs shirter than the interval
 
