@@ -15,6 +15,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// ToDO: Sollte auch einen Header bekommen (z. B. für visits aus Repl)
 // User is the "interface" used for client communication
 type User struct {
 	ID           primitive.ObjectID `json:"id" bson:"_id"`

@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go"
@@ -55,7 +56,7 @@ type Visit struct {
 }
 */
 
-// ToDo
+// SetConnections initializes the instance
 func (t *Tracker) SetConnections(influxClient *influxdb2.Client, mongoCollections map[string]*mongo.Collection) {
 	t.influxClient = *influxClient
 	t.collections = mongoCollections
@@ -68,14 +69,16 @@ func (t *Tracker) SaveVisitor(domain string, profileID string, userID string) {
 		return
 	}
 
-	fields := map[string]interface{}{
-		"domain": domain, // course, championship, user...
-		"userId": userID}
+	// include object type (domain) in key name,
+	// so this information can be "wrapped" in aggegration queries (eq "select profileID, count")
+
+	// the risk of high series cardinalty is accepted, since profiles is what we're interessted in
+	// https://docs.influxdata.com/influxdb/v2.0/write-data/best-practices/resolve-high-cardinality/
 
 	p := influxdb2.NewPoint(
 		"visit",
-		map[string]string{"profileId": profileID}, // used as key, taking the risk of high volume/mem needs
-		fields,
+		map[string]string{"profileId": domain + "_" + profileID},
+		map[string]interface{}{"userId": userID},
 		time.Now())
 
 	// ToDo: log Error
@@ -125,26 +128,25 @@ func (t *Tracker) SaveSearch(domain string, gameCode int32, seriesCodes []int32,
 // the value is "live" - meaning it's read from the analytics cache (influxDB)
 // which is set to a maximum period (TTL) of 30 days
 // creators and admins may receive the total counts which is added by the MongoDB information (different, protected endpoint)
-func (t *Tracker) GetVisits(profileID string, startDT time.Time) (int64, error) {
+func (t *Tracker) GetVisits(domain string, profileID string, startDT time.Time) (int64, error) {
 
 	// zum testen auskommentieren
 	if os.Getenv("USE_ANALYTICS") != "YES" {
 		return -1, nil
 	}
 
-	// since there are multiple fields in the measurement/point
-	// it's required to filter for one field, so we will receive just one record in the loop
 	flux := `from(bucket: "%s")
 		|> range(start: %s)
-		|> filter(fn: (r) => r["_measurement"] == "visit" and r["profileId"] == "%s" and r["_field"] == "domain")
+		|> filter(fn: (r) => r["_measurement"] == "visit" and r["profileId"] == "%s")
 		|> count()
 		|> yield(name: "count")`
 
+	id := domain + "_" + profileID
 	flux = fmt.Sprintf(
 		flux,
 		os.Getenv("ANALYTICS_VISITORS_BUCKET"),
 		startDT.Format(time.RFC3339),
-		profileID)
+		id)
 
 	result, err := t.SearchAPI.QueryAPI.Query(context.Background(), flux)
 	if err != nil {
@@ -164,9 +166,7 @@ func (t *Tracker) GetVisits(profileID string, startDT time.Time) (int64, error) 
 
 	return cnt, nil
 
-	// Gesamtlösung noch etwas unklar :-)
-	// Eventuell mit Replikation in die MongoDB zur Langzeitspeicherung (aktuell TTL 30d auf der Collection!)
-	// momemtan Live-Auswertung aus der InfluxDB (TTL setzen)
+	// alte Lösung
 	/*
 		// 1. count documents in mongoDB
 		oid, err := primitive.ObjectIDFromHex(objectID)
@@ -201,7 +201,7 @@ func (t *Tracker) GetVisits(profileID string, startDT time.Time) (int64, error) 
 // noch überlegen, wie anwenden, evtl. eine "stats"-seite für den user (link via usr-prile)
 // die würde dann alles zeigen, was von diesem autor erstellt wurde (params somit anpassen)
 // ==> vermutlich hier mal eine section, die nur bei Creators und Admins eingeblendet wird.
-func (t *Tracker) ListVisitors(profileID string, startDT time.Time, userID string) ([]Visit, error) {
+func (t *Tracker) ListVisitors(domain string, profileID string, startDT time.Time, userID string) ([]Visit, error) {
 
 	// zum testen auskommentieren
 	if os.Getenv("USE_ANALYTICS") != "YES" {
@@ -211,7 +211,7 @@ func (t *Tracker) ListVisitors(profileID string, startDT time.Time, userID strin
 	// 10 letzte Besucher (nur letzter Besuch pro Benutzer)
 	flux := `from(bucket: "%s")
 		|> range(start: %s)
-		|> filter(fn: (r) => r["_measurement"] == "visit" and r["profileId"] == "%s" and r["_field"] == "userId")
+		|> filter(fn: (r) => r["_measurement"] == "visit" and r["profileId"] == "%s")
 		|> group(columns: ["_value"], mode:"by")
 		|> max(column: "_time")
 		|> sort(columns: ["_time"], desc: true)
@@ -226,11 +226,12 @@ func (t *Tracker) ListVisitors(profileID string, startDT time.Time, userID strin
 		     		|> limit(n:10, offset: 0)`
 	*/
 
+	id := domain + "_" + profileID
 	flux = fmt.Sprintf(
 		flux,
 		os.Getenv("ANALYTICS_VISITORS_BUCKET"),
 		startDT.Format(time.RFC3339), // 2021-04-01T00:00:00Z
-		profileID)
+		id)
 
 	result, err := t.SearchAPI.QueryAPI.Query(context.Background(), flux)
 	if err != nil {
@@ -384,11 +385,9 @@ func (t *Tracker) Replicate() {
 				|> yield(name: "count")
 	*/
 
-	// since there are multiple fields in the measurement/point
-	// it's required to filter for one field, so we will receive just one record in the loop
 	flux := `from(bucket: "%s")
 	|> range(start: %s, stop: %s) // use pre-calculated stop because delete-api needs time
-	|> filter(fn: (r) => r["_measurement"] == "visit" and r["_field"] == "domain")
+	|> filter(fn: (r) => r["_measurement"] == "visit")
 	|> count()
 	|> yield(name: "count")`
 
@@ -427,8 +426,11 @@ func (t *Tracker) Replicate() {
 		var testProfiles []testProfile
 	*/
 
+	var strs []string // used to "extract" object type from key
 	for result.Next() {
 		// create a document and a write model for each record
+
+		strs = strings.Split(result.Record().ValueByKey("profileId").(string), "_")
 
 		operation := bson.D{
 			{Key: "$inc", Value: bson.D{
@@ -437,16 +439,19 @@ func (t *Tracker) Replicate() {
 		}
 
 		opModel := mongo.NewUpdateOneModel()
-		opModel.SetFilter(bson.D{{Key: "_id", Value: database.ObjectID(result.Record().ValueByKey("profileId").(string))}}).SetUpdate(operation)
+		opModel.SetFilter(bson.D{{Key: "_id", Value: database.ObjectID(strs[1])}}).SetUpdate(operation)
 
-		switch result.Record().Field() {
+		// fmt.Printf("%v: %v\n", strs[0], strs[1])
+		// die objekt-typen (domains) aus der influxDB auf collections der mongoDB mappen
+		switch strs[0] {
 		case "user":
-			opModels["users"] = append(opModels["user"], opModel)
+			opModels["users"] = append(opModels["users"], opModel)
 		case "course", "championship":
 			opModels["racing"] = append(opModels["racing"], opModel)
+		default:
+			// ToDo: Log
+			fmt.Println("ERROR: repl not correctly implemented")
 		}
-
-		//opModels = append(opModels, opModel)
 
 		/*
 			// used for debugging
@@ -460,8 +465,17 @@ func (t *Tracker) Replicate() {
 
 	// fmt.Println(testProfiles)
 
+	// len returns int, mongoDB's matchCount int64
+	// to avoid all the conversions, two variables
+	// are used for actually the same thing
+	var i int = 0
+	for _, v := range opModels {
+		fmt.Printf("tst: %v", len(v))
+		i += len(v)
+	}
+
 	// abort if no data to process
-	if opModels["users"] == nil && opModels["racing"] == nil {
+	if i == 0 {
 		// TODO: Log
 		fmt.Printf("%v: %v profile's visit(s) replicated.", time.Now().Format(time.RFC3339), 0)
 		return
@@ -469,38 +483,32 @@ func (t *Tracker) Replicate() {
 
 	opts := options.BulkWrite().SetOrdered(false)
 
-	// process each collection's write models (= update operations)
-
 	var cnt int64 = 0 // total replicated profile's visits
-	if opModels["user"] != nil {
-		res, err := t.collections["user"].BulkWrite(ctx, opModels["user"], opts) // context noch unklar, background ist nicht cancellable
-		if err != nil {
-			// ToDO: Log Error helpers.WrapError(err, helpers.FuncName())
-			fmt.Println(helpers.WrapError(err, helpers.FuncName()))
-		}
-		cnt = res.MatchedCount
-	}
 
-	if opModels["racing"] != nil {
-		res, err := t.collections["racing"].BulkWrite(ctx, opModels["racing"], opts) // context noch unklar, background ist nicht cancellable
-		if err != nil {
-			// ToDO: Log Error helpers.WrapError(err, helpers.FuncName())
-			fmt.Println(helpers.WrapError(err, helpers.FuncName()))
+	// process each collection's write models (= update operations)
+	for k, v := range opModels {
+		if v != nil {
+			res, err := t.collections[k].BulkWrite(ctx, v, opts) // context noch unklar, background ist nicht cancellable
+			if err != nil {
+				// ToDO: Log Error helpers.WrapError(err, helpers.FuncName())
+				fmt.Println(helpers.WrapError(err, helpers.FuncName()))
+			}
+			cnt = res.MatchedCount
 		}
-		cnt += res.MatchedCount
 	}
 
 	// ToDo: could be logged
 	fmt.Printf("%v: %v profile's visit(s) replicated.", time.Now().Format(time.RFC3339), cnt)
 
 	// 3. delete transfered data from influxDB
-	err = t.VisitorAPI.DeleteAPI.DeleteWithName(ctx, os.Getenv("ANALYTICS_ORG"), os.Getenv("ANALYTICS_VISITORS_BUCKET"), start, stop, "")
-	if err != nil {
-		// ToDo: Log "real" (severe) error
-		fmt.Println("ERROR: could not delete data in influxDB that was already written to MongoDB => duplicated/high values")
-		return
-	}
-
+	/*
+		err = t.VisitorAPI.DeleteAPI.DeleteWithName(ctx, os.Getenv("ANALYTICS_ORG"), os.Getenv("ANALYTICS_VISITORS_BUCKET"), start, stop, "")
+		if err != nil {
+			// ToDo: Log "real" (severe) error
+			fmt.Println("ERROR: could not delete data in influxDB that was already written to MongoDB => duplicated/high values")
+			return
+		}
+	*/
 }
 
 func (t *Tracker) seriesIndicators(seriesCodes []int32) (road float64, dirt float64, cross float64) {
