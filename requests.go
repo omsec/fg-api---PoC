@@ -43,6 +43,11 @@ func handleRequests() {
 
 	router.GET("/users/:id/followers", authentication.TokenAuthMiddleware(), controllers.GetFollowers)
 
+	// system tools
+	router.GET("/monitor/requests/count", authentication.TokenAuthMiddleware(), controllers.CountRequests)
+	router.GET("/monitor/requests/dump", authentication.TokenAuthMiddleware(), controllers.DumpRequests)
+	router.POST("/monitor/requests/flush", authentication.TokenAuthMiddleware(), controllers.FlushRequests)
+
 	// analytics -- ToDo: nested URL, set obj type via controller GetVisitsCourse
 	router.GET("/stats/visits", controllers.GetVisits)
 	router.GET("/stats/visitors", authentication.TokenAuthMiddleware(), controllers.ListVisitors)

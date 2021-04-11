@@ -101,7 +101,7 @@ func GetUser(c *gin.Context) {
 	c.JSON(http.StatusOK, &user)
 
 	// log this request, if it was a new one
-	if environment.Env.Requests.Continue(c.Request.RemoteAddr, c.Param("id")) {
+	if environment.Env.Requests.Continue(getIP(c.Request), c.Param("id")) {
 		environment.Env.Tracker.SaveVisitor("user", c.Param("id"), userID)
 	}
 }

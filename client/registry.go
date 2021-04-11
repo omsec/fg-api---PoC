@@ -66,3 +66,31 @@ func (r Registry) Flush() {
 	}
 	registry.Unlock()
 }
+
+// Count returns how many different client are currently active
+func (r Registry) Count() int {
+	registry.RLock()
+	cnt := len(registry.requests)
+	registry.RUnlock()
+	return cnt
+}
+
+// Dump returns the last accessed profile and timestamp for each client
+func (r Registry) Dump(max int) []request {
+
+	var res []request
+	var req request
+	i := 0
+	for _, v := range registry.requests {
+		if i > max {
+			break
+		}
+
+		req.ProfileID = v.ProfileID
+		req.Accessed = v.Accessed
+
+		res = append(res, req)
+	}
+
+	return res
+}

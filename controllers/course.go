@@ -288,7 +288,7 @@ func GetCoursePublic(c *gin.Context) {
 	c.JSON(http.StatusOK, data)
 
 	// log this request, if it was a new one
-	if environment.Env.Requests.Continue(c.Request.RemoteAddr, id) {
+	if environment.Env.Requests.Continue(getIP(c.Request), id) {
 		environment.Env.Tracker.SaveVisitor("course", id, userID)
 	}
 }
@@ -341,7 +341,7 @@ func GetCourseMember(c *gin.Context) {
 	c.JSON(http.StatusOK, data)
 
 	// log this request, if it was a new one
-	if environment.Env.Requests.Continue(c.Request.RemoteAddr, id) {
+	if environment.Env.Requests.Continue(getIP(c.Request), id) {
 		environment.Env.Tracker.SaveVisitor("course", id, userID)
 	}
 }
