@@ -7,7 +7,6 @@ import (
 	"forza-garage/environment"
 	"log"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -72,29 +71,32 @@ func main() {
 		}
 	}()
 
-	// replicate profile visit log from cache to db
-	replMins, err := strconv.Atoi(os.Getenv("ANALYTICS_REPLICATION_MINUTES"))
-	if err != nil {
-		log.Fatal("Invalid Configuration for env-Value ANALYTICS_REPLICATION_MINUTES")
-	}
-	replTicker := time.NewTicker(time.Duration(replMins) * time.Minute)
-	//replTicker := time.NewTicker(time.Duration(replMins) * 10 * time.Second)
-	// ToDo: save TS of last replication into a control file
-	// this ensures repl is run even if the server runs shirter than the interval
+	// ToDo: Repl Influx->Mongo eher Batch-mässig; File-Check?
+	/*
+		// replicate profile visit log from cache to db
+		replMins, err := strconv.Atoi(os.Getenv("ANALYTICS_REPLICATION_MINUTES"))
+		if err != nil {
+			log.Fatal("Invalid Configuration for env-Value ANALYTICS_REPLICATION_MINUTES")
+		}
+		replTicker := time.NewTicker(time.Duration(replMins) * time.Minute)
+		//replTicker := time.NewTicker(time.Duration(replMins) * 10 * time.Second)
+		// ToDo: save TS of last replication into a control file
+		// this ensures repl is run even if the server runs shirter than the interval
 
-	if os.Getenv("USE_ANALYTICS") == "YES" {
-		go func() {
-			for {
-				select {
-				case <-done:
-					return
-				//case t := <-ticker.C:
-				case <-replTicker.C:
-					environment.Env.Tracker.Replicate()
+		if os.Getenv("USE_ANALYTICS") == "YES" {
+			go func() {
+				for {
+					select {
+					case <-done:
+						return
+					//case t := <-ticker.C:
+					case <-replTicker.C:
+						environment.Env.Tracker.Replicate()
+					}
 				}
-			}
-		}()
-	}
+			}()
+		}
+	*/
 
 	fmt.Println("Forza-Garage running...")
 	handleRequests()
@@ -109,7 +111,7 @@ func main() {
 	environment.Env.Tracker.SearchAPI.WriteAPI.Flush()
 
 	requestTicker.Stop()
-	replTicker.Stop()
+	// replTicker.Stop()
 	done <- true
 
 }

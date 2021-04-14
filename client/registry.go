@@ -18,6 +18,13 @@ var registry = struct {
 	requests map[string]request // key is IP or domain-action (eg. course-search)
 }{}
 
+// RequestInfo is returned for monitoring (systools)
+type RequestInfo struct {
+	IP        string
+	Accessed  time.Time
+	ProfileID string
+}
+
 type Registry struct {
 }
 
@@ -76,16 +83,17 @@ func (r Registry) Count() int {
 }
 
 // Dump returns the last accessed profile and timestamp for each client
-func (r Registry) Dump(max int) []request {
+func (r Registry) Dump(max int) []RequestInfo {
 
-	var res []request
-	var req request
+	var res []RequestInfo
+	var req RequestInfo
 	i := 0
-	for _, v := range registry.requests {
+	for k, v := range registry.requests {
 		if i > max {
 			break
 		}
 
+		req.IP = k
 		req.ProfileID = v.ProfileID
 		req.Accessed = v.Accessed
 

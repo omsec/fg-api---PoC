@@ -201,7 +201,7 @@ func (t *Tracker) GetVisits(domain string, profileID string, startDT time.Time) 
 // noch überlegen, wie anwenden, evtl. eine "stats"-seite für den user (link via usr-prile)
 // die würde dann alles zeigen, was von diesem autor erstellt wurde (params somit anpassen)
 // ==> vermutlich hier mal eine section, die nur bei Creators und Admins eingeblendet wird.
-func (t *Tracker) ListVisitors(domain string, profileID string, startDT time.Time, userID string) ([]Visit, error) {
+func (t *Tracker) ListVisitors(profileID string, startDT time.Time, userID string) ([]Visit, error) {
 
 	// zum testen auskommentieren
 	if os.Getenv("USE_ANALYTICS") != "YES" {
@@ -209,9 +209,10 @@ func (t *Tracker) ListVisitors(domain string, profileID string, startDT time.Tim
 	}
 
 	// 10 letzte Besucher (nur letzter Besuch pro Benutzer)
-	flux := `from(bucket: "%s")
+	flux := `import "strings"
+		from(bucket: "%s")
 		|> range(start: %s)
-		|> filter(fn: (r) => r["_measurement"] == "visit" and r["profileId"] == "%s")
+		|> filter(fn: (r) => r["_measurement"] == "visit" and strings.containsStr(substr: "%s", v: r.profileId))
 		|> group(columns: ["_value"], mode:"by")
 		|> max(column: "_time")
 		|> sort(columns: ["_time"], desc: true)
@@ -226,12 +227,11 @@ func (t *Tracker) ListVisitors(domain string, profileID string, startDT time.Tim
 		     		|> limit(n:10, offset: 0)`
 	*/
 
-	id := domain + "_" + profileID
 	flux = fmt.Sprintf(
 		flux,
 		os.Getenv("ANALYTICS_VISITORS_BUCKET"),
 		startDT.Format(time.RFC3339), // 2021-04-01T00:00:00Z
-		id)
+		profileID)
 
 	result, err := t.SearchAPI.QueryAPI.Query(context.Background(), flux)
 	if err != nil {
@@ -477,7 +477,7 @@ func (t *Tracker) Replicate() {
 	// abort if no data to process
 	if i == 0 {
 		// TODO: Log
-		fmt.Printf("%v: %v profile's visit(s) replicated.", time.Now().Format(time.RFC3339), 0)
+		fmt.Printf("%v: %v profile's visit(s) replicated.\n", time.Now().Format(time.RFC3339), 0)
 		return
 	}
 
@@ -498,7 +498,7 @@ func (t *Tracker) Replicate() {
 	}
 
 	// ToDo: could be logged
-	fmt.Printf("%v: %v profile's visit(s) replicated.", time.Now().Format(time.RFC3339), cnt)
+	fmt.Printf("%v: %v profile's visit(s) replicated.\n", time.Now().Format(time.RFC3339), cnt)
 
 	// 3. delete transfered data from influxDB
 	/*

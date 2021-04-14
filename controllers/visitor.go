@@ -11,9 +11,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ToDO: nested, typisiert (wegen domain)
-// http://localhost:3000/stats/visits?id=604b6859f09f3aeecc9215c5&startDT=2021-03-20
-func GetVisits(c *gin.Context) {
+// http://localhost:3000/courses/public/5feb25fa266749192452cc08/visits?startDT=2021-03-20
+func GetCourseVisits(c *gin.Context) {
 
 	var (
 		err error
@@ -21,7 +20,7 @@ func GetVisits(c *gin.Context) {
 		apiError ErrorResponse
 	)
 
-	id := c.Query("id")
+	id := c.Param("id")
 	if id == "" {
 		apiError.Code = InvalidJSON
 		apiError.Message = apiError.String(apiError.Code)
@@ -70,8 +69,7 @@ func GetVisits(c *gin.Context) {
 
 }
 
-// ToDO: nested, typisiert (wegen domain)
-// http://localhost:3000/stats/visitors?id=6060491beab278c482d04ed8&startDT=2021-03-20
+// http://localhost:3000/courses/member/5feb25fa266749192452cc08/visitors?startDT=2021-04-10
 func ListVisitors(c *gin.Context) {
 
 	var (
@@ -116,7 +114,7 @@ func ListVisitors(c *gin.Context) {
 		}
 	}
 
-	visitors, err := environment.Env.Tracker.ListVisitors("course", id, startDT, userID)
+	visitors, err := environment.Env.Tracker.ListVisitors(id, startDT, userID)
 	if err != nil {
 		// nothing found (not an error to the client)
 		if err == apperror.ErrNoData {

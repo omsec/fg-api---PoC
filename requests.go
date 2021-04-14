@@ -49,7 +49,6 @@ func handleRequests() {
 	router.POST("/monitor/requests/flush", authentication.TokenAuthMiddleware(), controllers.FlushRequests)
 
 	// analytics -- ToDo: nested URL, set obj type via controller GetVisitsCourse
-	router.GET("/stats/visits", controllers.GetVisits)
 	router.GET("/stats/visitors", authentication.TokenAuthMiddleware(), controllers.ListVisitors)
 
 	// course
@@ -62,6 +61,8 @@ func handleRequests() {
 	router.POST("/courses", authentication.TokenAuthMiddleware(), controllers.AddCourse)
 	router.PUT("/courses/:id", authentication.TokenAuthMiddleware(), controllers.UpdateCourse)
 	// ToDO: Delete
+	// statistics
+	router.GET("/courses/public/:id/visits", controllers.GetCourseVisits) // visits since last 7 days "hot"
 	// voting
 	// for the sake of security I've created a public and a private endpoint, where the user is read from
 	// the token, which is not present/necessary in the open one; again, they're handled by the same model
