@@ -48,7 +48,7 @@ func handleRequests() {
 	router.GET("/monitor/requests/dump", authentication.TokenAuthMiddleware(), controllers.DumpRequests)
 	router.POST("/monitor/requests/flush", authentication.TokenAuthMiddleware(), controllers.FlushRequests)
 
-	// analytics -- ToDo: nested URL, set obj type via controller GetVisitsCourse
+	// analytics
 	router.GET("/stats/visitors", authentication.TokenAuthMiddleware(), controllers.ListVisitors)
 
 	// course
@@ -63,7 +63,7 @@ func handleRequests() {
 	// ToDO: Delete
 	// statistics
 	router.GET("/courses/public/:id/visits", controllers.GetCourseVisits) // visits since last 7 days "hot"
-	// voting
+	// voting - ToDo: makt this "stand-alone" so clients can implement a generic solution/components
 	// for the sake of security I've created a public and a private endpoint, where the user is read from
 	// the token, which is not present/necessary in the open one; again, they're handled by the same model
 	// function, but different controllers

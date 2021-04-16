@@ -470,7 +470,7 @@ func (t *Tracker) Replicate() {
 	// are used for actually the same thing
 	var i int = 0
 	for _, v := range opModels {
-		fmt.Printf("tst: %v", len(v))
+		// fmt.Printf("tst: %v", len(v))
 		i += len(v)
 	}
 
