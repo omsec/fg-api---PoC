@@ -43,13 +43,14 @@ func CastVoteCourse(c *gin.Context) {
 		}
 	*/
 
-	err = environment.Env.VoteModel.CastVote(data.ProfileID, userID, data.Vote, environment.Env.CourseModel.SetRating)
+	profileVotes, err := environment.Env.VoteModel.CastVote(data.ProfileID, userID, data.Vote, environment.Env.CourseModel.SetRating)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)
 		return
 	}
 
+	c.JSON(http.StatusOK, profileVotes)
 }
 
 // GetVotesPublic returns the current votes for and against a profile

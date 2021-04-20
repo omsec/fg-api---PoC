@@ -46,7 +46,7 @@ type VoteModel struct {
 
 // CastVotes is used to vote for/against something (a profile, eg. Course/Championship)
 // It also calcalutes the new rating and lower boundary to sort the profiles
-func (v VoteModel) CastVote(profileOID primitive.ObjectID, userID string, vote int32, SetRating func(courseOID primitive.ObjectID, rating float32, sortOrder float32) error) error {
+func (v VoteModel) CastVote(profileOID primitive.ObjectID, userID string, vote int32, SetRating func(courseOID primitive.ObjectID, rating float32, sortOrder float32) error) (profileVotes *ProfileVotes, err error) {
 
 	// Positive | Negative votes will be Upserts
 	// Revokes will be Deletes
@@ -59,7 +59,7 @@ func (v VoteModel) CastVote(profileOID primitive.ObjectID, userID string, vote i
 	if vote != VoteNeutral {
 		usr, err := v.GetUserNameOID(userOID)
 		if err != nil {
-			return ErrInvalidUser
+			return nil, ErrInvalidUser
 		}
 
 		filter := bson.D{
@@ -83,7 +83,7 @@ func (v VoteModel) CastVote(profileOID primitive.ObjectID, userID string, vote i
 		// not interessted in actual result
 		_, err = v.Collection.UpdateOne(ctx, filter, fields, opts)
 		if err != nil {
-			return helpers.WrapError(err, helpers.FuncName())
+			return nil, helpers.WrapError(err, helpers.FuncName())
 		}
 
 	} else {
@@ -99,21 +99,21 @@ func (v VoteModel) CastVote(profileOID primitive.ObjectID, userID string, vote i
 		// not interessted in actual result
 		_, err := v.Collection.DeleteOne(ctx, filter)
 		if err != nil {
-			return helpers.WrapError(err, helpers.FuncName())
+			return nil, helpers.WrapError(err, helpers.FuncName())
 		}
 	}
 
 	// 2. calculate the new rating and sort order of the profile
 	// reasons for client-side/api implemenation:
-	// 1. speed
-	// 2. complexity of queries
+	//  I. speed
+	// II. complexity of queries
 
 	// https://github.com/omsec/racing-db/blob/master/setup.sql
 	// #441
 
 	up, down, err := v.countVotes(profileOID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// https://yourbasic.org/golang/round-float-to-int/
@@ -132,7 +132,12 @@ func (v VoteModel) CastVote(profileOID primitive.ObjectID, userID string, vote i
 
 	SetRating(profileOID, rating, ratingSort)
 
-	return nil
+	profileVotes = new(ProfileVotes)
+	profileVotes.DownVotes = down
+	profileVotes.UpVotes = up
+	profileVotes.UserVote = vote
+
+	return profileVotes, nil
 }
 
 // GetVotes returns the up and down votes as well as the vote of the user

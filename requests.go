@@ -63,7 +63,7 @@ func handleRequests() {
 	// ToDO: Delete
 	// statistics
 	router.GET("/courses/public/:id/visits", controllers.GetCourseVisits) // visits since last 7 days "hot"
-	// voting - ToDo: makt this "stand-alone" so clients can implement a generic solution/components
+	// voting
 	// for the sake of security I've created a public and a private endpoint, where the user is read from
 	// the token, which is not present/necessary in the open one; again, they're handled by the same model
 	// function, but different controllers
