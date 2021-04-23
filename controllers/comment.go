@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"forza-garage/apperror"
 	"forza-garage/authentication"
 	"forza-garage/environment"
 	"forza-garage/models"
@@ -49,4 +50,23 @@ func AddComment(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, Created{id})
+}
+
+// ListCommentsPubic returns all comments and their answers (limited)
+func ListCommentsPublic(c *gin.Context) {
+
+	comments, err := environment.Env.CommentModel.ListComments(c.Param("id"), "")
+	if err != nil {
+		// nothing found (not an error to the client)
+		if err == apperror.ErrNoData {
+			c.Status(http.StatusNoContent)
+			return
+		}
+		// technical errors
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
+		return
+	}
+
+	c.JSON(http.StatusOK, comments)
 }

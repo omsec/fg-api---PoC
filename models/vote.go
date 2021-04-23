@@ -46,7 +46,12 @@ type VoteModel struct {
 
 // CastVotes is used to vote for/against something (a profile, eg. Course/Championship)
 // It also calcalutes the new rating and lower boundary to sort the profiles
-func (v VoteModel) CastVote(profileOID primitive.ObjectID, userID string, vote int32, SetRating func(courseOID primitive.ObjectID, rating float32, sortOrder float32) error) (profileVotes *ProfileVotes, err error) {
+func (v VoteModel) CastVote(
+	profileOID primitive.ObjectID,
+	userID string,
+	vote int32,
+	// ToDO: Signatur erweitern (up/down votes) - immer speichern (= 1 call weniger für view)
+	SetRating func(courseOID primitive.ObjectID, rating float32, sortOrder float32) error) (profileVotes *ProfileVotes, err error) {
 
 	// Positive | Negative votes will be Upserts
 	// Revokes will be Deletes

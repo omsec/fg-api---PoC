@@ -71,6 +71,7 @@ func handleRequests() {
 	router.GET("/courses/member/:id/votes", authentication.TokenAuthMiddleware(), controllers.GetVotesMember)
 	router.POST("/course/vote", authentication.TokenAuthMiddleware(), controllers.CastVoteCourse)
 	// commenting
+	router.GET("/courses/public/:id/comments", controllers.ListCommentsPublic)
 	router.POST("/course/comment", authentication.TokenAuthMiddleware(), controllers.AddComment)
 
 	// logics
