@@ -35,6 +35,14 @@ const (
 	VisibilityNone
 )
 
+// comment status
+const (
+	CommentStatusPending = iota
+	CommentStatusVisible
+	CommentStatusFlagged
+	CommentStatusBlocked
+)
+
 // course type
 const (
 	CourseTypeStandard = iota

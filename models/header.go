@@ -22,7 +22,7 @@ type Header struct {
 	Visits       int64              `json:"visits" bson:"visits,omitempty"` // total amount replicated from analytics store
 }
 
-// SmallHeader is used for embedded content, such as comments or file references (arrays)
+// SmallHeader is used for embedded content, such as file references (arrays) or comments
 type SmallHeader struct {
 	CreatedTS   time.Time          `json:"createdTS" bson:"createdTS"`
 	CreatedID   primitive.ObjectID `json:"createdID" bson:"createdID"`

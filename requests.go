@@ -70,6 +70,8 @@ func handleRequests() {
 	router.GET("/courses/public/:id/votes", controllers.GetVotesPublic)
 	router.GET("/courses/member/:id/votes", authentication.TokenAuthMiddleware(), controllers.GetVotesMember)
 	router.POST("/course/vote", authentication.TokenAuthMiddleware(), controllers.CastVoteCourse)
+	// commenting
+	router.POST("/course/comment", authentication.TokenAuthMiddleware(), controllers.AddComment)
 
 	// logics
 	router.POST("/course/exists", authentication.TokenAuthMiddleware(), controllers.ExistsForzaShare) // protected to prevent sniffs ;-)

@@ -13,11 +13,12 @@ import (
 
 // Environment is used for dependency-injection (package de-coupling)
 type Environment struct {
-	Requests    *client.Registry
-	Tracker     *analytics.Tracker
-	UserModel   models.UserModel
-	VoteModel   models.VoteModel
-	CourseModel models.CourseModel
+	Requests     *client.Registry
+	Tracker      *analytics.Tracker
+	UserModel    models.UserModel
+	VoteModel    models.VoteModel
+	CommentModel models.CommentModel
+	CourseModel  models.CourseModel
 }
 
 // newEnv operates as the constructor to initialize the collection references (private)
@@ -62,6 +63,9 @@ func newEnv(mongoClient *mongo.Client, influxClient *influxdb2.Client) *Environm
 
 	env.VoteModel.Collection = mongoClient.Database(os.Getenv("DB_NAME")).Collection("votes") // ToDO: Const
 	env.VoteModel.GetUserNameOID = env.UserModel.GetUserNameOID
+
+	env.CommentModel.Collection = mongoClient.Database(os.Getenv("DB_NAME")).Collection("comments")
+	env.CommentModel.GetUserName = env.UserModel.GetUserName
 
 	env.CourseModel.Client = mongoClient
 	env.CourseModel.Collection = mongoClient.Database(os.Getenv("DB_NAME")).Collection("racing") // ToDO: Const

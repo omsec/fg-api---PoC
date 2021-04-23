@@ -23,3 +23,9 @@ var (
 	ErrCourseNameMissing       = errors.New("course name is required")
 	ErrForzaSharingCodeTaken   = errors.New("forza sharing code already used")
 )
+
+// comment
+// transformed by controllers to respective Unprocessable Entity (422)
+var (
+	ErrCommentEmpty = errors.New("comment is required")
+)
