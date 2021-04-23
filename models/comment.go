@@ -6,6 +6,7 @@ import (
 	"forza-garage/database"
 	"forza-garage/helpers"
 	"forza-garage/lookups"
+	"os"
 	"strings"
 	"time"
 
@@ -100,7 +101,11 @@ func (m CommentModel) Create(comment *Comment, userID string) (string, error) {
 	comment.CreatedName = userName
 	comment.Rating = 0
 	comment.RatingSort = 0
-	comment.StatusCode = lookups.CommentStatusPending
+	if os.Getenv("COMMENT_MODERATION") == "YES" {
+		comment.StatusCode = lookups.CommentStatusPending
+	} else {
+		comment.StatusCode = lookups.CommentStatusVisible
+	}
 	comment.StatusTS = now
 	comment.StatusID = comment.CreatedID
 	comment.StatusName = comment.CreatedName
@@ -182,8 +187,14 @@ func (m CommentModel) ListComments(profileId string, userID string) ([]CommentLi
 		//{Key: "replies", Value: 1}, // reads full list, full structure
 	}
 
+	// always exclude pending/blocked content
+	// COMMENT_MODERATION env-option controls process, not publishing
+	exclStatus := [2]int32{lookups.CommentStatusBlocked, lookups.CommentStatusPending}
 	filter := bson.D{
 		{Key: "profileId", Value: id},
+		{Key: "statusCD", Value: bson.D{
+			{Key: "$nin", Value: exclStatus},
+		}},
 	}
 
 	sort := bson.D{
