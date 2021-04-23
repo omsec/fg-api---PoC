@@ -2,24 +2,29 @@ package models
 
 import (
 	"context"
-	"fmt"
+	"forza-garage/apperror"
 	"forza-garage/database"
 	"forza-garage/helpers"
 	"forza-garage/lookups"
 	"strings"
 	"time"
 
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+// PROBLEME/FRAGEN
+// Wie kann Paging gemacht werden? (load 10 more) - Offset, laufende ID ??
+// https://www.codementor.io/@arpitbhayani/fast-and-efficient-pagination-in-mongodb-9095flbqr
+
 // Comment is the "interface" used for client communication
 // optimistic locking not required here
 type Comment struct {
-	ID           primitive.ObjectID `json:"id" bson:"_id,omitempty"`                  // required for comments
+	ID           primitive.ObjectID `json:"id" bson:"_id"`                            // comment or reply ID
 	ProfileID    primitive.ObjectID `json:"profileId" bson:"profileId,omitempty"`     // required for comments
-	ProfileType  string             `json:"profileType" bson:"profileType,omitempty"` // required for comments
-	CreatedTS    time.Time          `json:"createdTS" bson:"createdTS,omitempty"`     // required for replies
+	ProfileType  *string            `json:"profileType" bson:"profileType,omitempty"` // required for comments
+	CreatedTS    time.Time          `json:"createdTS" bson:"-"`                       // extracted from OID
 	CreatedID    primitive.ObjectID `json:"createdID" bson:"createdID"`
 	CreatedName  string             `json:"createdName" bson:"createdName"`
 	ModifiedTS   time.Time          `json:"modifiedTS" bson:"modifiedTS,omitempty"` // edited if present
@@ -32,9 +37,9 @@ type Comment struct {
 	StatusTS     time.Time          `json:"statusTS" bson:"statusTS"`
 	StatusID     primitive.ObjectID `json:"statusID" bson:"statusID"`
 	StatusName   string             `json:"statusName" bson:"statusName"`
-	Pinned       bool               `json:"pinned" bson:"pinned"`
+	Pinned       *bool              `json:"pinned" bson:"pinned,omitempty"`
 	Comment      string             `json:"comment" bson:"comment"`
-	Replies      []Comment          `json:"replies" bson:"replies,omitempty"`
+	Replies      []Comment          `json:"replies" bson:"replies,omitempty"` // applies to GET-requests only
 }
 
 // CommentModel provides the logic to the interface and access to the database
@@ -68,7 +73,6 @@ func (m CommentModel) Create(comment *Comment, userID string) (string, error) {
 
 	// set common fields
 	now := time.Now()
-	comment.CreatedTS = now
 	comment.CreatedID = database.ObjectID(userID)
 	userName, err := m.GetUserName(userID)
 	if err != nil {
@@ -97,14 +101,41 @@ func (m CommentModel) Create(comment *Comment, userID string) (string, error) {
 
 		return res.InsertedID.(primitive.ObjectID).Hex(), nil
 	} else {
-		// reply - push array
+		// new reply - push array
 		// (update of an existing comment's document, but not that comment's M-Fields)
 
+		// remove fields which are not necessary for saving replies
+		id := comment.ID                     // save original ID of the parent comment for update
+		comment.ID = primitive.NewObjectID() // generate UID for the reply
+		comment.ProfileID = primitive.NilObjectID
+		comment.ProfileType = nil
+		comment.Pinned = nil // by convention, answers can't be pinged
+		comment.Replies = nil
+
 		// ID set by controller
+		filter := bson.D{{Key: "_id", Value: id}}
+		fields := bson.D{
+			{Key: "$push", Value: bson.D{
+				{Key: "replies", Value: bson.D{
+					{Key: "$each", Value: bson.A{comment}},
+					{Key: "$position", Value: 0},
+				}},
+			}},
+		}
 
-		fmt.Println("test")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel() // nach 10 Sekunden abbrechen
 
-		return "", nil
+		result, err := m.Collection.UpdateOne(ctx, filter, fields)
+		if err != nil {
+			return "", helpers.WrapError(err, helpers.FuncName())
+		}
+
+		if result.MatchedCount == 0 {
+			return "", apperror.ErrNoData // document might have been deleted
+		}
+
+		return comment.ID.Hex(), nil
 	}
 
 }
