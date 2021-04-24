@@ -10,6 +10,7 @@ import (
 )
 
 // CastVote registers a new vote or removes a revoked one. It also calcalutes the new rating and lower boundary to sort the profiles
+// ToDO: make generic - objType passed in POST body
 func CastVoteCourse(c *gin.Context) {
 
 	var (
@@ -43,7 +44,7 @@ func CastVoteCourse(c *gin.Context) {
 		}
 	*/
 
-	profileVotes, err := environment.Env.VoteModel.CastVote(data.ProfileID, userID, data.Vote, environment.Env.CourseModel.SetRating)
+	profileVotes, err := environment.Env.VoteModel.CastVote(data.ProfileID, data.ProfileType, userID, data.Vote, environment.Env.CourseModel.SetRating)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)

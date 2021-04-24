@@ -439,7 +439,7 @@ func (t *Tracker) Replicate() {
 		}
 
 		opModel := mongo.NewUpdateOneModel()
-		opModel.SetFilter(bson.D{{Key: "_id", Value: database.ObjectID(strs[1])}}).SetUpdate(operation)
+		opModel.SetFilter(bson.D{{Key: "_id", Value: helpers.ObjectID(strs[1])}}).SetUpdate(operation)
 
 		// fmt.Printf("%v: %v\n", strs[0], strs[1])
 		// die objekt-typen (domains) aus der influxDB auf collections der mongoDB mappen

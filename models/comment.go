@@ -3,7 +3,6 @@ package models
 import (
 	"context"
 	"forza-garage/apperror"
-	"forza-garage/database"
 	"forza-garage/helpers"
 	"forza-garage/lookups"
 	"os"
@@ -92,7 +91,7 @@ func (m CommentModel) Create(comment *Comment, userID string) (string, error) {
 
 	// set common fields
 	now := time.Now()
-	comment.CreatedID = database.ObjectID(userID)
+	comment.CreatedID = helpers.ObjectID(userID)
 	userName, err := m.GetUserName(userID)
 	if err != nil {
 		// Fachlicher Fehler oder bereits wrapped

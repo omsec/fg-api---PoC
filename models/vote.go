@@ -2,7 +2,6 @@ package models
 
 import (
 	"context"
-	"forza-garage/database"
 	"forza-garage/helpers"
 	"math"
 	"time"
@@ -18,10 +17,13 @@ import (
 // Vote represents a single vote action
 type Vote struct {
 	ProfileID primitive.ObjectID `json:"profileID" bson:"profileID" binding:"required"`
-	UserID    primitive.ObjectID `json:"userID" bson:"userID"` // actually required, read from token
-	UserName  string             `json:"userName" bson:"-"`
-	VoteTS    time.Time          `json:"voteTS" bson:"voteTS"`                 // stored separately because users can change their vote
-	Vote      int32              `json:"vote" bson:"vote" validate:"required"` // https://github.com/go-playground/validator/issues/290
+	// some items are displayed in lists, eg. comments
+	// to speed up querying (by reducing returned data) of user actions, the object type is stored
+	ProfileType string             `json:"profileType" bson:"profileType" binding:"required"`
+	UserID      primitive.ObjectID `json:"userID" bson:"userID"` // actually required, read from token
+	UserName    string             `json:"userName" bson:"-"`
+	VoteTS      time.Time          `json:"voteTS" bson:"voteTS"`                 // stored separately because users can change their vote
+	Vote        int32              `json:"vote" bson:"vote" validate:"required"` // https://github.com/go-playground/validator/issues/290
 }
 
 // ProfileVotes represents the current state of votes related to a profile
@@ -48,6 +50,7 @@ type VoteModel struct {
 // It also calcalutes the new rating and lower boundary to sort the profiles
 func (v VoteModel) CastVote(
 	profileOID primitive.ObjectID,
+	profileType string,
 	userID string,
 	vote int32,
 	// ToDO: Signatur erweitern (up/down votes) - immer speichern (= 1 call weniger für view)
@@ -58,7 +61,7 @@ func (v VoteModel) CastVote(
 
 	// Keine Prüfung, ob das ObjectID gültig ist. (dann braucht's den Typ als Parameter und alle COllections :-/)
 
-	userOID := database.ObjectID(userID) // ToDo: auf err umstellen (?)
+	userOID := helpers.ObjectID(userID) // ToDo: auf err umstellen (?)
 
 	// 1. save or delete vote
 	if vote != VoteNeutral {
@@ -148,8 +151,8 @@ func (v VoteModel) CastVote(
 // GetVotes returns the up and down votes as well as the vote of the user
 func (v VoteModel) GetVotes(profileID string, userID string) (profileVotes *ProfileVotes, err error) {
 
-	profileOID := database.ObjectID(profileID)
-	userOID := database.ObjectID(userID)
+	profileOID := helpers.ObjectID(profileID)
+	userOID := helpers.ObjectID(userID)
 	profileVotes = new(ProfileVotes)
 
 	// 1. get the user's vote
