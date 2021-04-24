@@ -16,6 +16,7 @@ import (
 
 // Vote represents a single vote action
 type Vote struct {
+	// ID ommitted, yet created in document
 	ProfileID primitive.ObjectID `json:"profileID" bson:"profileID" binding:"required"`
 	// some items are displayed in lists, eg. comments
 	// to speed up querying (by reducing returned data) of user actions, the object type is stored
@@ -49,10 +50,7 @@ type VoteModel struct {
 // CastVotes is used to vote for/against something (a profile, eg. Course/Championship)
 // It also calcalutes the new rating and lower boundary to sort the profiles
 func (v VoteModel) CastVote(
-	profileOID primitive.ObjectID,
-	profileType string,
-	userID string,
-	vote int32,
+	vote Vote,
 	// ToDO: Signatur erweitern (up/down votes) - immer speichern (= 1 call weniger für view)
 	SetRating func(courseOID primitive.ObjectID, rating float32, sortOrder float32) error) (profileVotes *ProfileVotes, err error) {
 
@@ -61,26 +59,25 @@ func (v VoteModel) CastVote(
 
 	// Keine Prüfung, ob das ObjectID gültig ist. (dann braucht's den Typ als Parameter und alle COllections :-/)
 
-	userOID := helpers.ObjectID(userID) // ToDo: auf err umstellen (?)
-
 	// 1. save or delete vote
-	if vote != VoteNeutral {
-		usr, err := v.GetUserNameOID(userOID)
+	if vote.Vote != VoteNeutral {
+		usr, err := v.GetUserNameOID(vote.UserID)
 		if err != nil {
 			return nil, ErrInvalidUser
 		}
 
 		filter := bson.D{
-			{Key: "profileID", Value: profileOID},
-			{Key: "userID", Value: userOID},
+			{Key: "profileID", Value: vote.ProfileID},
+			{Key: "userID", Value: vote.UserID},
 		}
 
 		fields := bson.D{
-			{Key: "$set", Value: bson.D{{Key: "profileID", Value: profileOID}}},
-			{Key: "$set", Value: bson.D{{Key: "userID", Value: userOID}}},
+			{Key: "$set", Value: bson.D{{Key: "profileID", Value: vote.ProfileID}}},
+			{Key: "$set", Value: bson.D{{Key: "profileType", Value: vote.ProfileType}}},
+			{Key: "$set", Value: bson.D{{Key: "userID", Value: vote.UserID}}},
 			{Key: "$set", Value: bson.D{{Key: "userName", Value: usr}}},
 			{Key: "$set", Value: bson.D{{Key: "voteTS", Value: time.Now()}}}, // $currentDate müsste nochmal "verpackt" werden
-			{Key: "$set", Value: bson.D{{Key: "vote", Value: vote}}},
+			{Key: "$set", Value: bson.D{{Key: "vote", Value: vote.Vote}}},
 		}
 
 		opts := options.Update().SetUpsert(true)
@@ -97,8 +94,8 @@ func (v VoteModel) CastVote(
 	} else {
 		// delete vote (revoke)
 		filter := bson.D{
-			{Key: "profileID", Value: profileOID},
-			{Key: "userID", Value: userOID},
+			{Key: "profileID", Value: vote.ProfileID},
+			{Key: "userID", Value: vote.UserID},
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -119,7 +116,7 @@ func (v VoteModel) CastVote(
 	// https://github.com/omsec/racing-db/blob/master/setup.sql
 	// #441
 
-	up, down, err := v.countVotes(profileOID)
+	up, down, err := v.countVotes(vote.ProfileID)
 	if err != nil {
 		return nil, err
 	}
@@ -138,12 +135,12 @@ func (v VoteModel) CastVote(
 		ratingSort = float32((upVotes+1.9208)/totalVotes - 1.96*math.Sqrt((upVotes*downVotes)/totalVotes+0.9604)/totalVotes/(1+3.8416/totalVotes)) // lower bound
 	}
 
-	SetRating(profileOID, rating, ratingSort)
+	SetRating(vote.ProfileID, rating, ratingSort)
 
 	profileVotes = new(ProfileVotes)
 	profileVotes.DownVotes = down
 	profileVotes.UpVotes = up
-	profileVotes.UserVote = vote
+	profileVotes.UserVote = vote.Vote
 
 	return profileVotes, nil
 }

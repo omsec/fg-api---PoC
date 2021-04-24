@@ -3,6 +3,7 @@ package controllers
 import (
 	"forza-garage/authentication"
 	"forza-garage/environment"
+	"forza-garage/helpers"
 	"forza-garage/models"
 	"net/http"
 
@@ -44,7 +45,10 @@ func CastVoteCourse(c *gin.Context) {
 		}
 	*/
 
-	profileVotes, err := environment.Env.VoteModel.CastVote(data.ProfileID, data.ProfileType, userID, data.Vote, environment.Env.CourseModel.SetRating)
+	// apply userID from token (username resolved in model)
+	data.UserID = helpers.ObjectID(userID)
+
+	profileVotes, err := environment.Env.VoteModel.CastVote(data, environment.Env.CourseModel.SetRating)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)
