@@ -51,8 +51,7 @@ type VoteModel struct {
 // It also calcalutes the new rating and lower boundary to sort the profiles
 func (v VoteModel) CastVote(
 	vote Vote,
-	// ToDO: Signatur erweitern (up/down votes) - immer speichern (= 1 call weniger für view)
-	SetRating func(courseOID primitive.ObjectID, rating float32, sortOrder float32) error) (profileVotes *ProfileVotes, err error) {
+	SetRating func(social *Social) error) (profileVotes *ProfileVotes, err error) {
 
 	// Positive | Negative votes will be Upserts
 	// Revokes will be Deletes
@@ -135,7 +134,21 @@ func (v VoteModel) CastVote(
 		ratingSort = float32((upVotes+1.9208)/totalVotes - 1.96*math.Sqrt((upVotes*downVotes)/totalVotes+0.9604)/totalVotes/(1+3.8416/totalVotes)) // lower bound
 	}
 
-	SetRating(vote.ProfileID, rating, ratingSort)
+	// pass "social meta data" to the referenced profile
+	// which will stored it in its document
+
+	// the struct literal syntax also creates the variable
+	// https://yourbasic.org/golang/structs-explained/
+	social := &Social{
+		ProfileOID: vote.ProfileID,
+		Rating:     rating,
+		SortOrder:  ratingSort,
+		UpVotes:    up,
+		DownVotes:  down,
+		TouchedTS:  time.Now(),
+	}
+
+	SetRating(social)
 
 	profileVotes = new(ProfileVotes)
 	profileVotes.DownVotes = down

@@ -553,16 +553,19 @@ func (m CourseModel) UpdateCourse(course *Course, userID string) error {
 }
 
 // SetRating is called by the voting model
-func (m CourseModel) SetRating(courseOID primitive.ObjectID, rating float32, sortOrder float32) error {
+func (m CourseModel) SetRating(social *Social) error {
 
 	// set fields to be possibily updated
 	fields := bson.D{
 		// systemfields
-		{Key: "$set", Value: bson.D{{Key: "metaInfo.rating", Value: rating}}},
-		{Key: "$set", Value: bson.D{{Key: "metaInfo.ratingSort", Value: sortOrder}}},
+		{Key: "$set", Value: bson.D{{Key: "metaInfo.rating", Value: social.Rating}}},
+		{Key: "$set", Value: bson.D{{Key: "metaInfo.ratingSort", Value: social.SortOrder}}},
+		{Key: "$set", Value: bson.D{{Key: "metaInfo.UpVotes", Value: social.UpVotes}}},
+		{Key: "$set", Value: bson.D{{Key: "metaInfo.DownVotes", Value: social.DownVotes}}},
+		{Key: "$set", Value: bson.D{{Key: "metaInfo.TouchedTS", Value: social.TouchedTS}}},
 	}
 
-	filter := bson.D{{Key: "_id", Value: courseOID}}
+	filter := bson.D{{Key: "_id", Value: social.ProfileOID}}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel() // nach 10 Sekunden abbrechen
