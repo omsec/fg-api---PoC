@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"forza-garage/apperror"
 	"forza-garage/helpers"
 	"math"
 	"time"
@@ -10,6 +11,13 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+)
+
+// vote (action) type
+const (
+	VoteUp      int32 = 1
+	VoteDown    int32 = -1
+	VoteNeutral int32 = 0 // revoked or not voted
 )
 
 // validator (tags) used by Gin => https://github.com/go-playground/validator
@@ -34,12 +42,14 @@ type ProfileVotes struct {
 	UserVote  int32 `json:"userVote"` // vote action of the requested user (read from token)
 }
 
-const (
-	VoteUp      int32 = 1
-	VoteDown    int32 = -1
-	VoteNeutral int32 = 0 // revoked or not voted
-)
+// UserVote represents a user's vote actions to a profile
+// usually used as a slice type for lists
+type UserVote struct {
+	ProfileID primitive.ObjectID `json:"profileId"`
+	UserVote  int32              `json:"userVote" bson:"vote"` // primitive values need bson tag
+}
 
+// VoteModel provides the logics to the data type
 type VoteModel struct {
 	Collection *mongo.Collection
 	// Gewisse Informationen kommen vom User-Model, die werden hier referenziert
@@ -56,7 +66,7 @@ func (v VoteModel) CastVote(
 	// Positive | Negative votes will be Upserts
 	// Revokes will be Deletes
 
-	// Keine Prüfung, ob das ObjectID gültig ist. (dann braucht's den Typ als Parameter und alle COllections :-/)
+	// Keine Prüfung, ob das ObjectID gültig ist. (dann braucht's alle COllections :-/)
 
 	// 1. save or delete vote
 	if vote.Vote != VoteNeutral {
@@ -115,6 +125,8 @@ func (v VoteModel) CastVote(
 	// https://github.com/omsec/racing-db/blob/master/setup.sql
 	// #441
 
+	// ToDo:
+	// überlegen, ob hier wirklich agregiert werden soll/kann (performance)
 	up, down, err := v.countVotes(vote.ProfileID)
 	if err != nil {
 		return nil, err
@@ -158,7 +170,90 @@ func (v VoteModel) CastVote(
 	return profileVotes, nil
 }
 
+// GetUserVotes returns the vote action of a user
+func (v VoteModel) GetUserVote(profileID string, userID string) (int32, error) {
+
+	profileOID := helpers.ObjectID(profileID)
+	userOID := helpers.ObjectID(userID)
+
+	// 1. get the user's vote
+
+	filter := bson.D{
+		{Key: "profileID", Value: profileOID},
+		{Key: "userID", Value: userOID},
+	}
+
+	fields := bson.D{
+		{Key: "_id", Value: 0}, // _id kommt immer, daher explizit ausschalten
+		{Key: "vote", Value: 1},
+	}
+
+	opts := options.FindOne().SetProjection(fields)
+
+	// user vote
+	data := struct {
+		Vote int32 `bson:"vote"`
+	}{VoteNeutral}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel() // nach 10 Sekunden abbrechen
+
+	err := v.Collection.FindOne(ctx, filter, opts).Decode(&data)
+	if err != nil {
+		// it's NOT an error if the user didn't vote
+		if err != mongo.ErrNoDocuments {
+			return VoteNeutral, helpers.WrapError(err, helpers.FuncName())
+		}
+	}
+	return data.Vote, nil
+}
+
+// GetUserVotes returns the vote actions of a user to objects of a specific type
+// usually used for items displayed in lists, such as comments
+func (v VoteModel) GetUserVotes(domain string, userID string) ([]UserVote, error) {
+
+	userOID := helpers.ObjectID(userID)
+
+	fields := bson.D{
+		{Key: "_id", Value: 0}, // _id kommt immer, ausser es wird explizit ausgeschlossen (0)
+		{Key: "profileID", Value: 1},
+		{Key: "vote", Value: 1},
+	}
+
+	filter := bson.D{
+		{Key: "userID", Value: userOID},
+		{Key: "profileType", Value: domain},
+	}
+
+	opts := options.Find().SetProjection(fields).SetLimit(20)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel() // nach 10 Sekunden abbrechen
+
+	cursor, err := v.Collection.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, helpers.WrapError(err, helpers.FuncName())
+	}
+
+	// receive results
+	var votes []UserVote
+
+	err = cursor.All(ctx, &votes)
+	if err != nil {
+		return nil, helpers.WrapError(err, helpers.FuncName())
+	}
+
+	// check for empty result set (no error raised by find)
+	if votes == nil {
+		return nil, apperror.ErrNoData
+	}
+
+	return votes, nil
+}
+
 // GetVotes returns the up and down votes as well as the vote of the user
+// zur Zeit unbenutzt (gelesen über parent's meta); evtl. mal für stats-page
+/*
 func (v VoteModel) GetVotes(profileID string, userID string) (profileVotes *ProfileVotes, err error) {
 
 	profileOID := helpers.ObjectID(profileID)
@@ -204,6 +299,7 @@ func (v VoteModel) GetVotes(profileID string, userID string) (profileVotes *Prof
 
 	return profileVotes, nil
 }
+*/
 
 // count the actual votes for/against a profile
 func (v VoteModel) countVotes(profileOID primitive.ObjectID) (up int32, down int32, err error) {

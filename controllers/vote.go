@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"forza-garage/apperror"
 	"forza-garage/authentication"
 	"forza-garage/environment"
 	"forza-garage/helpers"
@@ -58,8 +59,67 @@ func CastVoteCourse(c *gin.Context) {
 	c.JSON(http.StatusOK, profileVotes)
 }
 
+// GetUserVote returns the vote of a user to a profile
+// http://localhost:3000/user/vote?pId=6055d819671e62579fcc2151
+func GetUserVote(c *gin.Context) {
+
+	var profileId = c.Query("pId")
+
+	// always read userID from token (param is ignored)
+	userID, err := authentication.Authenticate(c.Request)
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	vote, err := environment.Env.VoteModel.GetUserVote(profileId, userID)
+	if err != nil {
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
+		return
+	}
+
+	// wrap response into an object
+	res := struct {
+		Vote int32 `json:"vote"`
+	}{vote}
+
+	c.JSON(http.StatusOK, res)
+}
+
+// GetUserVotes returns the votes of a user to profiles of given type
+// http://localhost:3000/users/601526e8a468e8973193facd/votes?pDomain=course
+func GetUserVotes(c *gin.Context) {
+
+	var domain = c.Query("pDomain")
+
+	// always read userID from token (param is ignored)
+	userID, err := authentication.Authenticate(c.Request)
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	votes, err := environment.Env.VoteModel.GetUserVotes(domain, userID)
+	if err != nil {
+		// nothing found (not an error to the client)
+		if err == apperror.ErrNoData {
+			c.Status(http.StatusNoContent)
+			return
+		}
+		// technical errors
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
+		return
+	}
+
+	c.JSON(http.StatusOK, votes)
+}
+
+// Nicht mehr benutzt
 // GetVotesPublic returns the current votes for and against a profile
 // http://localhost:3000/courses/public/6060491beab278c482d04ed8/votes
+/*
 func GetVotesPublic(c *gin.Context) {
 
 	var (
@@ -97,3 +157,4 @@ func GetVotesMember(c *gin.Context) {
 
 	c.JSON(http.StatusOK, profileVotes)
 }
+*/

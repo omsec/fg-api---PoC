@@ -31,9 +31,14 @@ func handleRequests() {
 	router.POST("/user/changePass", authentication.TokenAuthMiddleware(), controllers.ChangePassword)
 	router.POST("/user/verifyPass", authentication.TokenAuthMiddleware(), controllers.VerifyPassword)
 
-	router.POST("/users/:id/blocked", authentication.TokenAuthMiddleware(), controllers.BlockUser)
-	router.DELETE("/users/:id/blocked", authentication.TokenAuthMiddleware(), controllers.UnblockUser)
+	// nicht öffentlich, kein aufruf für andere als der aktuelle user vorgesehen (daher kein param)
+	router.POST("/user/blocked", authentication.TokenAuthMiddleware(), controllers.BlockUser)
+	router.DELETE("/user/blocked", authentication.TokenAuthMiddleware(), controllers.UnblockUser)
 
+	router.GET("/user/vote", authentication.TokenAuthMiddleware(), controllers.GetUserVote)
+	router.GET("/user/votes", authentication.TokenAuthMiddleware(), controllers.GetUserVotes)
+
+	// öffentlich/einsehbar, aufruf auch für profile anderer user (daher mit param)
 	router.GET("/users/:id/friends", authentication.TokenAuthMiddleware(), controllers.GetFriends)
 	router.POST("/users/:id/friends", authentication.TokenAuthMiddleware(), controllers.AddFriend)
 	router.DELETE("/users/:id/friends", authentication.TokenAuthMiddleware(), controllers.RemoveFriend) // ToDo: anpassn {id}
@@ -67,8 +72,8 @@ func handleRequests() {
 	// for the sake of security I've created a public and a private endpoint, where the user is read from
 	// the token, which is not present/necessary in the open one; again, they're handled by the same model
 	// function, but different controllers
-	router.GET("/courses/public/:id/votes", controllers.GetVotesPublic)
-	router.GET("/courses/member/:id/votes", authentication.TokenAuthMiddleware(), controllers.GetVotesMember)
+	//router.GET("/courses/public/:id/votes", controllers.GetVotesPublic)
+	//router.GET("/courses/member/:id/votes", authentication.TokenAuthMiddleware(), controllers.GetVotesMember)
 	router.POST("/course/vote", authentication.TokenAuthMiddleware(), controllers.CastVoteCourse)
 	// commenting
 	router.GET("/courses/public/:id/comments", controllers.ListCommentsPublic)

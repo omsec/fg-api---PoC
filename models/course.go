@@ -560,9 +560,9 @@ func (m CourseModel) SetRating(social *Social) error {
 		// systemfields
 		{Key: "$set", Value: bson.D{{Key: "metaInfo.rating", Value: social.Rating}}},
 		{Key: "$set", Value: bson.D{{Key: "metaInfo.ratingSort", Value: social.SortOrder}}},
-		{Key: "$set", Value: bson.D{{Key: "metaInfo.UpVotes", Value: social.UpVotes}}},
-		{Key: "$set", Value: bson.D{{Key: "metaInfo.DownVotes", Value: social.DownVotes}}},
-		{Key: "$set", Value: bson.D{{Key: "metaInfo.TouchedTS", Value: social.TouchedTS}}},
+		{Key: "$set", Value: bson.D{{Key: "metaInfo.upVotes", Value: social.UpVotes}}},
+		{Key: "$set", Value: bson.D{{Key: "metaInfo.downVotes", Value: social.DownVotes}}},
+		{Key: "$set", Value: bson.D{{Key: "metaInfo.touchedTS", Value: social.TouchedTS}}},
 	}
 
 	filter := bson.D{{Key: "_id", Value: social.ProfileOID}}
