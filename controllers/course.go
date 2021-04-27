@@ -142,7 +142,7 @@ func ListCoursesPublic(c *gin.Context) {
 	c.JSON(http.StatusOK, courses)
 
 	// log the request
-	environment.Env.Tracker.SaveSearch("course", search.GameCode, search.SeriesCodes, search.SearchTerm, userID)
+	environment.Env.Tracker.SaveSearchCourse(search, courses)
 }
 
 // ListCoursesMember returns a list of racing tracks for logged-in users
@@ -239,7 +239,7 @@ func ListCoursesMember(c *gin.Context) {
 	c.JSON(http.StatusOK, courses)
 
 	// log the request
-	environment.Env.Tracker.SaveSearch("course", search.GameCode, search.SeriesCodes, search.SearchTerm, userID)
+	environment.Env.Tracker.SaveSearchCourse(search, courses)
 }
 
 // GetCoursePublic returns the specified track

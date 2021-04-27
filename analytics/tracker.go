@@ -7,6 +7,7 @@ import (
 	"forza-garage/database"
 	"forza-garage/helpers"
 	"forza-garage/lookups"
+	"forza-garage/models"
 	"math"
 	"os"
 	"sort"
@@ -34,6 +35,15 @@ type Visit struct {
 	ObjectID string
 	UserID   string `json:"userID"`
 	UserName string `json:"userName"`
+}
+
+// SearchParams is used to pass generic search parameters to the logger
+type SearchParams struct {
+	Domain      string
+	ProfileIDs  []string // https://www.socketloop.com/tutorials/golang-how-to-get-struct-field-and-value-by-name
+	GameCode    int32
+	SeriesCodes []int32
+	SearchTerm  string
 }
 
 /*
@@ -87,7 +97,62 @@ func (t *Tracker) SaveVisitor(domain string, profileID string, userID string) {
 }
 
 // SaveSearch stores event data in the analytics cache
-// series is a masked integer
+// Logger Functions are typed due to different fields/logic of the domains
+func (t *Tracker) SaveSearchCourse(search *models.CourseSearchParams, results []models.CourseListItem) {
+
+	// zum testen auskommentieren
+	if os.Getenv("USE_ANALYTICS") != "YES" {
+		return
+	}
+
+	// do not log any empty search
+	if search.SearchTerm == "" {
+		return
+	}
+
+	// do not log searches for std-routes (usually look-ups)
+	if search.SearchMode == models.CourseSearchModeStandard {
+		return
+	}
+
+	/*
+		// do not log "homepage" (no filters)
+		if len(search.SeriesCodes) == 3 && search.SearchTerm == "" {
+			return
+		}
+	*/
+
+	// convert seriesCodes into indicators
+	road, dirt, cross := t.seriesIndicators(search.SeriesCodes)
+
+	// searched series will be stored bitwise to save storage, according to this:
+	// https://www.mssqltips.com/sqlservertip/1218/sql-server-bitwise-operators-to-store-multiple-values-in-one-column/
+	series := byte(math.Pow(2*road, 1) + math.Pow(2*dirt, 2) + math.Pow(2*cross, 3))
+
+	ts := time.Now()
+
+	for _, v := range results {
+		fields := map[string]interface{}{
+			"domain": "course",
+			"game":   search.GameCode,
+			"series": series,
+			"term":   search.SearchTerm}
+
+		p := influxdb2.NewPoint(
+			"search", // measurement
+			map[string]string{"courseId": v.ID.Hex()}, // tag
+			fields,
+			ts)
+
+		// ToDo: log Error
+		t.SearchAPI.WriteAPI.WritePoint(p)
+	}
+
+	// flush called implicity (nicht perfekt)
+}
+
+// --> alte Lösung - nicht mehr gebraucht
+/*
 func (t *Tracker) SaveSearch(domain string, gameCode int32, seriesCodes []int32, searchTerm string, userID string) {
 
 	// zum testen auskommentieren
@@ -123,6 +188,7 @@ func (t *Tracker) SaveSearch(domain string, gameCode int32, seriesCodes []int32,
 	t.SearchAPI.WriteAPI.WritePoint(p)
 
 }
+*/
 
 // GetVisits counts the number of visits of a profile
 // the value is "live" - meaning it's read from the analytics cache (influxDB)
