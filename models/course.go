@@ -47,6 +47,7 @@ type CourseRef struct {
 }
 
 // CourseListItem is the reduced/simplified model used for listings
+// ToDO: Allenfalls die UserVote auch integrieren (symbol in listen)
 type CourseListItem struct {
 	ID           primitive.ObjectID `json:"id"`
 	CreatedTS    time.Time          `json:"createdTS"`
@@ -96,6 +97,7 @@ type CourseModel struct {
 	GetUserName func(ID string) (string, error)
 	// ToDo: halt umbennen GetCredentials
 	CredentialsReader func(userId string, loadFriendlist bool) *Credentials
+	GetUserVote       func(profileID string, userID string) (int32, error) // injected from vote model
 }
 
 // Models do not change original values passed by the controllers, but return new structures
@@ -441,6 +443,13 @@ func (m CourseModel) GetCourse(courseID string, userID string) (*Course, error) 
 	if err != nil {
 		// no wrapping needed, since function returns app errors
 		return nil, err
+	}
+
+	// get user's vote if present
+	if userID != "" {
+		// fehler kann hier ignoriert werden (default = 0 = note voted)
+		uv, _ := m.GetUserVote(courseID, userID)
+		data.MetaInfo.UserVote = uv
 	}
 
 	m.addLookups(&data)

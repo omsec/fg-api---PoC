@@ -65,13 +65,15 @@ func newEnv(mongoClient *mongo.Client, influxClient *influxdb2.Client) *Environm
 	env.VoteModel.GetUserNameOID = env.UserModel.GetUserNameOID
 
 	env.CommentModel.Collection = mongoClient.Database(os.Getenv("DB_NAME")).Collection("comments")
-	env.CommentModel.GetUserName = env.UserModel.GetUserName
+	env.CommentModel.GetUserNameOID = env.UserModel.GetUserNameOID
+	env.CommentModel.GetUserVotes = env.VoteModel.GetUserVotes
 
 	env.CourseModel.Client = mongoClient
 	env.CourseModel.Collection = mongoClient.Database(os.Getenv("DB_NAME")).Collection("racing") // ToDO: Const
 	// Funktionen aus dem User Model in's Course model "injecten"
 	env.CourseModel.GetUserName = env.UserModel.GetUserName
 	env.CourseModel.CredentialsReader = env.UserModel.GetCredentials
+	env.CourseModel.GetUserVote = env.VoteModel.GetUserVote
 	// inject analytics
 	// env.CourseModel.Tracker = env.Tracker
 

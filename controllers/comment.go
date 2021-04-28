@@ -4,6 +4,7 @@ import (
 	"forza-garage/apperror"
 	"forza-garage/authentication"
 	"forza-garage/environment"
+	"forza-garage/helpers"
 	"forza-garage/models"
 	"net/http"
 
@@ -33,6 +34,7 @@ func AddComment(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, apiError)
 		return
 	}
+
 	// validate request
 	comment, err := environment.Env.CommentModel.Validate(data)
 	if err != nil {
@@ -41,8 +43,12 @@ func AddComment(c *gin.Context) {
 		return
 	}
 
-	// userID als Parameter, damit hier nicht DB-Spezifisches gebraucht wird (Mongo-OID)
-	id, err := environment.Env.CommentModel.Create(comment, userID)
+	// apply user from token
+	comment.CreatedID = helpers.ObjectID(userID)
+
+	// c.Param("id") - parent (OID) read from body
+
+	id, err := environment.Env.CommentModel.Create(comment)
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)

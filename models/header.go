@@ -19,6 +19,7 @@ type Header struct {
 	RatingSort   float32            `json:"ratingSort" bson:"ratingSort"` // calculated by the voting function & persisted (lowerBound)
 	UpVotes      int32              `json:"upVotes" bson:"upVotes"`       // votes persisted by "castVotes" for faster reading
 	DownVotes    int32              `json:"downVotes" bson:"downVotes"`
+	UserVote     int32              `json:"userVote" bson:"-"`              // returned dynamically by API
 	TouchedTS    time.Time          `json:"touchedTS" bson:"touchedTS"`     // de-norm of many sources (maybe nested or referenced)
 	RecVer       int64              `json:"recVer" bson:"recVer"`           // optimistic locking (update, delete) - starts with 1 (by .Add)
 	Visits       int64              `json:"visits" bson:"visits,omitempty"` // total amount replicated from analytics store

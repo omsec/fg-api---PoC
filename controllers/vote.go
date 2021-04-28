@@ -12,8 +12,7 @@ import (
 )
 
 // CastVote registers a new vote or removes a revoked one. It also calcalutes the new rating and lower boundary to sort the profiles
-// ToDO: make generic - objType passed in POST body
-func CastVoteCourse(c *gin.Context) {
+func CastVote(c *gin.Context) {
 
 	var (
 		err      error
@@ -49,7 +48,19 @@ func CastVoteCourse(c *gin.Context) {
 	// apply userID from token (username resolved in model)
 	data.UserID = helpers.ObjectID(userID)
 
-	profileVotes, err := environment.Env.VoteModel.CastVote(data, environment.Env.CourseModel.SetRating)
+	// inject SetRating based on domain
+	var profileVotes *models.ProfileVotes
+	switch data.ProfileType {
+	case "course":
+		profileVotes, err = environment.Env.VoteModel.CastVote(data, environment.Env.CourseModel.SetRating)
+	case "comment":
+		profileVotes, err = environment.Env.VoteModel.CastVote(data, environment.Env.CommentModel.SetRating)
+	default:
+		apiError.Code = SystemError
+		apiError.Message = apiError.String(apiError.Code)
+		// fmt.Println(err)
+		c.JSON(http.StatusInternalServerError, apiError)
+	}
 	if err != nil {
 		status, apiError := HandleError(err)
 		c.JSON(status, apiError)
@@ -59,8 +70,9 @@ func CastVoteCourse(c *gin.Context) {
 	c.JSON(http.StatusOK, profileVotes)
 }
 
-// GetUserVote returns the vote of a user to a profile
+// GetUserVote returns the vote of a user to a profile - entfernt
 // http://localhost:3000/user/vote?pId=6055d819671e62579fcc2151
+/*
 func GetUserVote(c *gin.Context) {
 
 	var profileId = c.Query("pId")
@@ -86,6 +98,7 @@ func GetUserVote(c *gin.Context) {
 
 	c.JSON(http.StatusOK, res)
 }
+*/
 
 // GetUserVotes returns the votes of a user to profiles of given type
 // http://localhost:3000/users/601526e8a468e8973193facd/votes?pDomain=course

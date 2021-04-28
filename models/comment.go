@@ -22,10 +22,10 @@ import (
 // Comment is the "interface" used for client communication
 // optimistic locking not required here
 type Comment struct {
-	ID          primitive.ObjectID `json:"id" bson:"_id"`                                      // comment or reply ID
-	ProfileID   primitive.ObjectID `json:"profileId,omitempty" bson:"profileId,omitempty"`     // required for comments
-	ProfileType *string            `json:"profileType,omitempty" bson:"profileType,omitempty"` // required for comments
-	//CreatedTS    time.Time          `json:"createdTS" bson:"-"`                       // extracted from OID
+	ID           primitive.ObjectID `json:"id" bson:"_id"`                                      // comment or reply ID
+	ProfileID    primitive.ObjectID `json:"profileId,omitempty" bson:"profileId,omitempty"`     // required for comments
+	ProfileType  *string            `json:"profileType,omitempty" bson:"profileType,omitempty"` // required for comments
+	CreatedTS    time.Time          `json:"createdTS" bson:"-"`                                 // extracted from OID
 	CreatedID    primitive.ObjectID `json:"createdID" bson:"createdID"`
 	CreatedName  string             `json:"createdName" bson:"createdName"`
 	ModifiedTS   *time.Time         `json:"modifiedTS,omitempty" bson:"modifiedTS,omitempty"` // edited if present
@@ -33,6 +33,7 @@ type Comment struct {
 	ModifiedName *string            `json:"modifiedName,omitempty" bson:"modifiedName,omitempty"`
 	UpVotes      int32              `json:"upVotes" bson:"upVotes"`
 	DownVotes    int32              `json:"downVotes" bson:"downVotes"`
+	UserVote     int32              `json:"userVote" bson:"-"`            // returned dynamically by API
 	Rating       float32            `json:"rating" bson:"rating"`         // calculated by the voting function & persisted
 	RatingSort   float32            `json:"ratingSort" bson:"ratingSort"` // calculated by the voting function & persisted (lowerBound)
 	StatusCode   int32              `json:"statusCode" bson:"statusCD"`
@@ -55,6 +56,7 @@ type CommentListItem struct {
 	Modified    bool               `json:"modified"`
 	UpVotes     int32              `json:"upVotes"`
 	DownVotes   int32              `json:"downVotes"`
+	UserVote    int32              `json:"userVote" bson:"-"`
 	Pinned      *bool              `json:"pinned,omitempty"`
 	Comment     string             `json:"comment"`
 	Replies     []CommentListItem  `json:"replies,omitempty"`
@@ -65,8 +67,9 @@ type CommentModel struct {
 	Collection *mongo.Collection
 	// Gewisse Informationen kommen vom User-Model, die werden hier referenziert
 	// somit muss das nicht der Controller machen
-	GetUserName    func(ID string) (string, error)
+	GetUserNameOID func(userID primitive.ObjectID) (string, error)
 	GetCredentials func(userId string, loadFriendlist bool) *Credentials
+	GetUserVotes   func(domain string, userID string) ([]UserVote, error) // injected from votes model
 }
 
 // Validate checks given values and sets defaults where applicable (immutable)
@@ -85,14 +88,13 @@ func (m CommentModel) Validate(comment Comment) (*Comment, error) {
 }
 
 // Create adds a new Comment or Response
-func (m CommentModel) Create(comment *Comment, userID string) (string, error) {
+func (m CommentModel) Create(comment *Comment) (string, error) {
 
 	// Validate called by controller
 
 	// set common fields
 	now := time.Now()
-	comment.CreatedID = helpers.ObjectID(userID)
-	userName, err := m.GetUserName(userID)
+	userName, err := m.GetUserNameOID(comment.CreatedID)
 	if err != nil {
 		// Fachlicher Fehler oder bereits wrapped
 		return "", err
@@ -164,6 +166,7 @@ func (m CommentModel) Create(comment *Comment, userID string) (string, error) {
 }
 
 // ListComments returns all comments and their possible answers to a given profile (limited)
+// userID is required to look-up the user's votes
 func (m CommentModel) ListComments(profileId string, userID string) ([]CommentListItem, error) {
 
 	id, err := primitive.ObjectIDFromHex(profileId)
@@ -255,8 +258,51 @@ func (m CommentModel) ListComments(profileId string, userID string) ([]CommentLi
 		commentList = append(commentList, comment)
 	}
 
-	// ToDO:
-	// if userID != "" die Votes für die entsprechenden ListComments lesen (1x query dann in der Liste ergänzen)
+	// die User Votes für die entsprechenden ListComments lesen
+	if userID != "" {
+		// fehler kann hier ignoriert werden, teilresultat reicht auch
+		uv, _ := m.GetUserVotes("comment", userID)
+
+		if uv != nil {
+			// merge user votes into list of comments and their replies
+			for _, cmt := range commentList {
+				for _, v := range uv {
+					if cmt.ID == v.ProfileID {
+						cmt.UserVote = v.UserVote
+					}
+				}
+			}
+		}
+	}
 
 	return commentList, nil
+}
+
+// SetRating is called by the voting model
+func (m CommentModel) SetRating(social *Social) error {
+
+	// set fields to be possibily updated
+	fields := bson.D{
+		// systemfields
+		{Key: "$set", Value: bson.D{{Key: "rating", Value: social.Rating}}},
+		{Key: "$set", Value: bson.D{{Key: "ratingSort", Value: social.SortOrder}}},
+		{Key: "$set", Value: bson.D{{Key: "upVotes", Value: social.UpVotes}}},
+		{Key: "$set", Value: bson.D{{Key: "downVotes", Value: social.DownVotes}}},
+	}
+
+	filter := bson.D{{Key: "_id", Value: social.ProfileOID}}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel() // nach 10 Sekunden abbrechen
+
+	result, err := m.Collection.UpdateOne(ctx, filter, fields)
+	if err != nil {
+		return helpers.WrapError(err, helpers.FuncName())
+	}
+
+	if result.MatchedCount == 0 {
+		return apperror.ErrNoData // document might have been deleted
+	}
+
+	return nil
 }

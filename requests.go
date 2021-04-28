@@ -35,8 +35,9 @@ func handleRequests() {
 	router.POST("/user/blocked", authentication.TokenAuthMiddleware(), controllers.BlockUser)
 	router.DELETE("/user/blocked", authentication.TokenAuthMiddleware(), controllers.UnblockUser)
 
-	router.GET("/user/vote", authentication.TokenAuthMiddleware(), controllers.GetUserVote)
-	router.GET("/user/votes", authentication.TokenAuthMiddleware(), controllers.GetUserVotes)
+	// router.GET("/user/vote", authentication.TokenAuthMiddleware(), controllers.GetUserVote)   // ToDo: kann entfallen; UserVote in Profiles integrieren, dyn. auslesen
+	router.GET("/user/votes", authentication.TokenAuthMiddleware(), controllers.GetUserVotes) // nur noch für (eigenes) profil als übersicht
+	// ToDo: /user/comments
 
 	// öffentlich/einsehbar, aufruf auch für profile anderer user (daher mit param)
 	router.GET("/users/:id/friends", authentication.TokenAuthMiddleware(), controllers.GetFriends)
@@ -56,6 +57,9 @@ func handleRequests() {
 	// analytics
 	router.GET("/stats/visitors", authentication.TokenAuthMiddleware(), controllers.ListVisitors)
 
+	// voting
+	router.POST("/vote", authentication.TokenAuthMiddleware(), controllers.CastVote)
+
 	// course
 	// GET hat keinen BODY (Go/Gin & Postman unterstützen das zwar, Angular nicht) - deshalb Parameter
 	// https://xspdf.com/resolution/58530870.html
@@ -68,16 +72,9 @@ func handleRequests() {
 	// ToDO: Delete
 	// statistics
 	router.GET("/courses/public/:id/visits", controllers.GetCourseVisits) // visits since last 7 days "hot"
-	// voting
-	// for the sake of security I've created a public and a private endpoint, where the user is read from
-	// the token, which is not present/necessary in the open one; again, they're handled by the same model
-	// function, but different controllers
-	//router.GET("/courses/public/:id/votes", controllers.GetVotesPublic)
-	//router.GET("/courses/member/:id/votes", authentication.TokenAuthMiddleware(), controllers.GetVotesMember)
-	router.POST("/course/vote", authentication.TokenAuthMiddleware(), controllers.CastVoteCourse)
 	// commenting
 	router.GET("/courses/public/:id/comments", controllers.ListCommentsPublic)
-	router.POST("/course/comment", authentication.TokenAuthMiddleware(), controllers.AddComment)
+	router.POST("/courses/:id/comment", authentication.TokenAuthMiddleware(), controllers.AddComment) // nested by convention, id read from body
 
 	// logics
 	router.POST("/course/exists", authentication.TokenAuthMiddleware(), controllers.ExistsForzaShare) // protected to prevent sniffs ;-)

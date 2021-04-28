@@ -170,7 +170,7 @@ func (v VoteModel) CastVote(
 	return profileVotes, nil
 }
 
-// GetUserVotes returns the vote action of a user
+// GetUserVote returns the vote action of a user
 func (v VoteModel) GetUserVote(profileID string, userID string) (int32, error) {
 
 	profileOID := helpers.ObjectID(profileID)
