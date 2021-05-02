@@ -35,7 +35,6 @@ func handleRequests() {
 	router.POST("/user/blocked", authentication.TokenAuthMiddleware(), controllers.BlockUser)
 	router.DELETE("/user/blocked", authentication.TokenAuthMiddleware(), controllers.UnblockUser)
 
-	// router.GET("/user/vote", authentication.TokenAuthMiddleware(), controllers.GetUserVote)   // ToDo: kann entfallen; UserVote in Profiles integrieren, dyn. auslesen
 	router.GET("/user/votes", authentication.TokenAuthMiddleware(), controllers.GetUserVotes) // nur noch für (eigenes) profil als übersicht
 	// ToDo: /user/comments
 
@@ -60,6 +59,9 @@ func handleRequests() {
 	// voting
 	router.POST("/vote", authentication.TokenAuthMiddleware(), controllers.CastVote)
 
+	// commenting
+	router.POST("/comment", authentication.TokenAuthMiddleware(), controllers.AddComment) // easier handling for client
+
 	// course
 	// GET hat keinen BODY (Go/Gin & Postman unterstützen das zwar, Angular nicht) - deshalb Parameter
 	// https://xspdf.com/resolution/58530870.html
@@ -74,7 +76,7 @@ func handleRequests() {
 	router.GET("/courses/public/:id/visits", controllers.GetCourseVisits) // visits since last 7 days "hot"
 	// commenting
 	router.GET("/courses/public/:id/comments", controllers.ListCommentsPublic)
-	router.POST("/courses/:id/comment", authentication.TokenAuthMiddleware(), controllers.AddComment) // nested by convention, id read from body
+	router.GET("/courses/member/:id/comments", authentication.TokenAuthMiddleware(), controllers.ListCommentsMember)
 
 	// logics
 	router.POST("/course/exists", authentication.TokenAuthMiddleware(), controllers.ExistsForzaShare) // protected to prevent sniffs ;-)

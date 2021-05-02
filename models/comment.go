@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"fmt"
 	"forza-garage/apperror"
 	"forza-garage/helpers"
 	"forza-garage/lookups"
@@ -100,8 +101,12 @@ func (m CommentModel) Create(comment *Comment) (string, error) {
 		return "", err
 	}
 	comment.CreatedName = userName
+
+	comment.UpVotes = 0
+	comment.DownVotes = 0
 	comment.Rating = 0
 	comment.RatingSort = 0
+
 	if os.Getenv("COMMENT_MODERATION") == "YES" {
 		comment.StatusCode = lookups.CommentStatusPending
 	} else {
@@ -243,6 +248,7 @@ func (m CommentModel) ListComments(profileId string, userID string) ([]CommentLi
 		if len(c.Replies) > 0 {
 			comment.Replies = make([]CommentListItem, len(c.Replies))
 			for i, r := range c.Replies {
+				fmt.Println(r.Comment)
 				comment.Replies[i].ID = r.ID
 				comment.Replies[i].CreatedTS = primitive.ObjectID.Timestamp(r.ID)
 				comment.Replies[i].CreatedID = r.CreatedID
@@ -263,12 +269,22 @@ func (m CommentModel) ListComments(profileId string, userID string) ([]CommentLi
 		// fehler kann hier ignoriert werden, teilresultat reicht auch
 		uv, _ := m.GetUserVotes("comment", userID)
 
+		// merge user votes into list of comments and their replies
 		if uv != nil {
-			// merge user votes into list of comments and their replies
-			for _, cmt := range commentList {
+			// https://yourbasic.org/golang/gotcha-change-value-range/
+			for i := range commentList {
+				// process comments
 				for _, v := range uv {
-					if cmt.ID == v.ProfileID {
-						cmt.UserVote = v.UserVote
+					if commentList[i].ID == v.ProfileID {
+						commentList[i].UserVote = v.UserVote
+					}
+				}
+				// process replies
+				for j := range commentList[i].Replies {
+					for _, v := range uv {
+						if commentList[i].Replies[j].ID == v.ProfileID {
+							commentList[i].Replies[j].UserVote = v.UserVote
+						}
 					}
 				}
 			}

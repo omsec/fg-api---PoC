@@ -76,3 +76,29 @@ func ListCommentsPublic(c *gin.Context) {
 
 	c.JSON(http.StatusOK, comments)
 }
+
+// ListCommentsMember returns all comments and their answers (limited)
+// This is the version that includes a user's votes if present
+func ListCommentsMember(c *gin.Context) {
+
+	userID, err := authentication.Authenticate(c.Request)
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	comments, err := environment.Env.CommentModel.ListComments(c.Param("id"), userID)
+	if err != nil {
+		// nothing found (not an error to the client)
+		if err == apperror.ErrNoData {
+			c.Status(http.StatusNoContent)
+			return
+		}
+		// technical errors
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
+		return
+	}
+
+	c.JSON(http.StatusOK, comments)
+}
