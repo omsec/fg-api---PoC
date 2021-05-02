@@ -234,6 +234,7 @@ func (m CommentModel) ListComments(profileId string, userID string) ([]CommentLi
 	// copy data to reduced list-struct
 	var commentList []CommentListItem
 	var comment CommentListItem
+	// var reply CommentListItem
 
 	for _, c := range comments {
 		comment.ID = c.ID
@@ -248,13 +249,13 @@ func (m CommentModel) ListComments(profileId string, userID string) ([]CommentLi
 		if len(c.Replies) > 0 {
 			comment.Replies = make([]CommentListItem, len(c.Replies))
 			for i, r := range c.Replies {
-				fmt.Println(r.Comment)
+				fmt.Println(r.UpVotes)
 				comment.Replies[i].ID = r.ID
 				comment.Replies[i].CreatedTS = primitive.ObjectID.Timestamp(r.ID)
 				comment.Replies[i].CreatedID = r.CreatedID
 				comment.Replies[i].CreatedName = r.CreatedName
 				comment.Replies[i].Modified = (r.ModifiedTS != nil)
-				comment.Replies[i].UpVotes = r.UpVotes
+				comment.Replies[i].UpVotes = 100 // r.UpVotes
 				comment.Replies[i].DownVotes = r.DownVotes
 				comment.Replies[i].Pinned = nil // by convention not present for replies
 				comment.Replies[i].Comment = r.Comment
@@ -295,6 +296,11 @@ func (m CommentModel) ListComments(profileId string, userID string) ([]CommentLi
 }
 
 // SetRating is called by the voting model
+// ToDo:
+// Wie können über die std-funktion  antworten (embedded array) updated werden
+// Problem: Erkennung, ob document oder embedded array
+// wahrscheinlich nur mit 2x DB-Abfragen; 0 docs = comment :-/
+// somit wär's wohl doch besser, auch antworten als doc zu speichern
 func (m CommentModel) SetRating(social *Social) error {
 
 	// set fields to be possibily updated
