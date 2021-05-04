@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"fmt"
 	"forza-garage/apperror"
 	"forza-garage/database"
 	"forza-garage/helpers"
@@ -188,6 +189,7 @@ func (m CourseModel) CreateCourse(course *Course, userID string) (string, error)
 }
 
 // SearchCourses lists or searches course (ohne Comments, aber mit Files/Tags)
+// ACHTUNG: Die Liste wird sortiert und limitiert, daher können einzelne Dokumente herausfallen ;-)
 func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams, userID string) ([]CourseListItem, error) {
 
 	// CourseListeItem: Verkleinerte/vereinfachte Struktur für Listen
@@ -254,6 +256,7 @@ func (m CourseModel) SearchCourses(searchSpecs *CourseSearchParams, userID strin
 				}},
 				{Key: "visibilityCD", Value: lookups.VisibilityAll},
 			}
+			fmt.Println(filter)
 		} else {
 			filter = bson.D{
 				// every next field is AND

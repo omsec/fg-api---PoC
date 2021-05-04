@@ -255,7 +255,7 @@ func (m CommentModel) ListComments(profileId string, userID string) ([]CommentLi
 				comment.Replies[i].CreatedID = r.CreatedID
 				comment.Replies[i].CreatedName = r.CreatedName
 				comment.Replies[i].Modified = (r.ModifiedTS != nil)
-				comment.Replies[i].UpVotes = 100 // r.UpVotes
+				comment.Replies[i].UpVotes = r.UpVotes
 				comment.Replies[i].DownVotes = r.DownVotes
 				comment.Replies[i].Pinned = nil // by convention not present for replies
 				comment.Replies[i].Comment = r.Comment
@@ -296,11 +296,6 @@ func (m CommentModel) ListComments(profileId string, userID string) ([]CommentLi
 }
 
 // SetRating is called by the voting model
-// ToDo:
-// Wie können über die std-funktion  antworten (embedded array) updated werden
-// Problem: Erkennung, ob document oder embedded array
-// wahrscheinlich nur mit 2x DB-Abfragen; 0 docs = comment :-/
-// somit wär's wohl doch besser, auch antworten als doc zu speichern
 func (m CommentModel) SetRating(social *Social) error {
 
 	// set fields to be possibily updated
@@ -322,8 +317,43 @@ func (m CommentModel) SetRating(social *Social) error {
 		return helpers.WrapError(err, helpers.FuncName())
 	}
 
+	// replies to comments are embedded to make queries for GET-requests faster.
+	// this means, there should be distuingished between comments and replies when updating the rating.
+	// howevever this is not possible in the current design, since the voting system should be generic.
+	// this drawback is accepted; it means that votes to replies require a second database access. when
+	// the parent's (comment) document was not found by "UpdateOne" a second update will be issued that
+	// targets the embedded array containing the answers.
 	if result.MatchedCount == 0 {
-		return apperror.ErrNoData // document might have been deleted
+
+		// find the comment by the ID of the answer
+		// { 'replies._id': ObjectId('608e63ced04782d5c49c1eb8')}
+
+		// db.people.update({name: "Tom", "marks.subject": "English"},{"$set":{"marks.$.marks": 85}})
+		// https://riptutorial.com/mongodb/example/22368/update-of-embedded-documents-
+
+		filter = bson.D{
+			{Key: "replies._id", Value: social.ProfileOID}, // find comment by reply id
+			{Key: "replies._id", Value: social.ProfileOID}, // find reply itself
+		}
+
+		fields = bson.D{
+			{Key: "$set", Value: bson.D{{Key: "replies.$.rating", Value: social.Rating}}},
+			{Key: "$set", Value: bson.D{{Key: "replies.$.ratingSort", Value: social.SortOrder}}},
+			{Key: "$set", Value: bson.D{{Key: "replies.$.upVotes", Value: social.UpVotes}}},
+			{Key: "$set", Value: bson.D{{Key: "replies.$.downVotes", Value: social.DownVotes}}},
+		}
+
+		ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel() // nach 10 Sekunden abbrechen
+
+		result, err := m.Collection.UpdateOne(ctx, filter, fields)
+		if err != nil {
+			return helpers.WrapError(err, helpers.FuncName())
+		}
+
+		if result.MatchedCount == 0 {
+			return apperror.ErrNoData // document might have been deleted
+		}
 	}
 
 	return nil
