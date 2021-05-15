@@ -1,13 +1,19 @@
 package controllers
 
 import (
+	"fmt"
 	"forza-garage/apperror"
 	"forza-garage/authentication"
 	"forza-garage/environment"
+	"forza-garage/helpers"
 	"forza-garage/lookups"
+	"forza-garage/models"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
+	"github.com/twinj/uuid"
 )
 
 // Test is what it seems :-)
@@ -355,4 +361,90 @@ func FollowUser(c *gin.Context) {
 		c.JSON(status, apiError)
 		return
 	}
+}
+
+// UploadProfilePicture sets the profile picture
+func UploadProfilePicture(c *gin.Context) {
+
+	var (
+		err error
+		// data     models.UploadInfo
+		apiError   ErrorResponse // declared here to raise own errors
+		uploadInfo *models.UploadInfo
+	)
+
+	// (no post body available at forms)
+	userID, err := authentication.Authenticate(c.Request)
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	// TODO: (in generic upload): Read Form Data - kein Body vorhanden!
+
+	// https://github.com/gin-gonic/gin#single-file
+
+	// single file
+	file, err := c.FormFile("file")
+	if err != nil {
+		fmt.Println(err)
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	}
+
+	// https://www.devdungeon.com/content/working-files-go
+
+	// generate file name & prepare metadata
+	uploadInfo = new(models.UploadInfo)
+
+	uploadInfo.ID = uuid.NewV4().String()
+	uploadInfo.UploadedID = helpers.ObjectID(userID)
+	// do not save path in the DB as this is subject to change
+	// and don't use userID for file name
+	uploadInfo.SysFileName = "usr_" + uploadInfo.ID + filepath.Ext(file.Filename)
+	uploadInfo.OrigFileName = file.Filename
+	uploadInfo.URL = os.Getenv("APP_HOME") + os.Getenv("UPLOAD_TARGET") + "/" + uploadInfo.SysFileName
+
+	stage := "." + os.Getenv("UPLOAD_STAGE") + "/" + uploadInfo.SysFileName
+
+	// Upload the file to specific stage
+	err = c.SaveUploadedFile(file, stage)
+	if err != nil {
+		fmt.Println(err)
+		apiError.Code = SystemError
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusInternalServerError, apiError)
+		return
+	}
+
+	// delete target file if already present
+	// ToDO: read old file name from model
+	// os.Remove()
+
+	// move file to destination
+	dst := "." + os.Getenv("UPLOAD_TARGET") + "/" + uploadInfo.SysFileName
+	err = os.Rename(stage, dst)
+	if err != nil {
+		fmt.Println(err)
+		apiError.Code = SystemError
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusInternalServerError, apiError)
+		return
+	}
+
+	// ToDo: read TargetUser from form
+	err = environment.Env.UserModel.SetProfilePicture(uploadInfo)
+	if err != nil {
+		fmt.Println(err)
+		apiError.Code = SystemError
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusInternalServerError, apiError)
+		return
+	}
+
+	// ToDO: Return file URL along with 200 (full path with domain)
+
+	c.String(http.StatusOK, fmt.Sprintf("'%s' uploaded!", file.Filename))
 }

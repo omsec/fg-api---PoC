@@ -11,6 +11,9 @@ import (
 func handleRequests() {
 	router.Use(middleware.CORSMiddleware())
 
+	// uploads: Set a lower memory limit for multipart forms (default is 32 MiB)
+	router.MaxMultipartMemory = 8 << 20 // 8 MiB
+
 	// ToDo: Groups ?
 
 	router.GET("/test", controllers.Test)
@@ -30,6 +33,7 @@ func handleRequests() {
 	router.GET("/users/:id", authentication.TokenAuthMiddleware(), controllers.GetUser)
 	router.POST("/user/changePass", authentication.TokenAuthMiddleware(), controllers.ChangePassword)
 	router.POST("/user/verifyPass", authentication.TokenAuthMiddleware(), controllers.VerifyPassword)
+	router.POST("/user/uploadAvatar", authentication.TokenAuthMiddleware(), controllers.UploadProfilePicture)
 
 	// nicht öffentlich, kein aufruf für andere als der aktuelle user vorgesehen (daher kein param)
 	router.POST("/user/blocked", authentication.TokenAuthMiddleware(), controllers.BlockUser)

@@ -28,6 +28,8 @@ func init() {
 }
 
 func main() {
+	// ToDO: check if .env vars are present
+
 	// Connect to main database here (mongoDB)
 	err := database.OpenConnection()
 	if err != nil {

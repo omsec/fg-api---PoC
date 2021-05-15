@@ -3,6 +3,7 @@
 *
 !*.*
 !*/
+/upload
 
 # ignored since there is no "untrack" command available on github :-/
 # the file will be added to the repo with no values
