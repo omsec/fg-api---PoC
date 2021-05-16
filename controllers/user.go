@@ -408,7 +408,7 @@ func UploadProfilePicture(c *gin.Context) {
 	// ToDO: Helpers oder helpers.file proc für path funcs (ohne punkt)
 	// getStage, getTarget etc. die func arbeitet mit den envs
 	// save File, returns uploadInfo
-	uploadInfo.URL = os.Getenv("APP_HOME") + ":" + os.Getenv("APP_PORT") + environment.UploadEndpoint + uploadInfo.SysFileName
+	uploadInfo.URL = os.Getenv("API_HOME") + ":" + os.Getenv("API_PORT") + environment.UploadEndpoint + "/" + uploadInfo.SysFileName
 
 	stage := os.Getenv("UPLOAD_STAGE") + "/" + uploadInfo.SysFileName
 
