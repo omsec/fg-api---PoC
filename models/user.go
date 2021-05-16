@@ -836,7 +836,9 @@ func (m UserModel) SetProfilePicture(uploadInfo *UploadInfo) error {
 	now := time.Now()
 	uploadInfo.UploadedTS = now
 	uploadInfo.UploadedName, _ = m.GetUserNameOID(uploadInfo.UploadedID)
-	// ToDo: Status Attrs
+	// moderation maybe enabled/disabled for uploads and comments
+	// status model is shared
+	// (in a future refactoring "user content status" look-up type)
 	if os.Getenv("UPLOAD_MODERATION") == "YES" {
 		uploadInfo.StatusCode = lookups.CommentStatusPending
 	} else {
@@ -847,8 +849,7 @@ func (m UserModel) SetProfilePicture(uploadInfo *UploadInfo) error {
 	uploadInfo.StatusName = uploadInfo.UploadedName
 
 	fields := bson.D{
-		// ToDo: ModifiedTS
-		{Key: "$set", Value: bson.D{{Key: "ProfilePicture", Value: &uploadInfo}}},
+		{Key: "$set", Value: bson.D{{Key: "profilePicture", Value: &uploadInfo}}},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -877,24 +878,29 @@ func (m UserModel) ClearProfilePicture(userID string) error {
 
 // GetProfileFileName returns the current avatat's file name if present
 // (usually used to delete the file)
-func (m UserModel) GetProfileFileName(userID string) (*string, error) {
+func (m UserModel) GetProfileFileName(userID primitive.ObjectID) (string, error) {
 
-	userOID := helpers.ObjectID(userID)
-	filter := bson.D{{Key: "_id", Value: userOID}}
+	filter := bson.D{{Key: "_id", Value: userID}}
 
-	data := struct {
-		FileName string `bson:"_id"`
-	}{}
+	fields := bson.D{
+		{Key: "_id", Value: 0},
+		{Key: "profilePicture", Value: 1},
+	}
+
+	var data User
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel() // nach 10 Sekunden abbrechen
 
-	// später vielleicht project() wenn's zu viele felder werden (excl. nested oder sowas)
-	err := m.Collection.FindOne(ctx, filter).Decode(&data)
+	err := m.Collection.FindOne(ctx, filter, options.FindOne().SetProjection(fields)).Decode(&data)
 	if err != nil {
-		return nil, apperror.ErrNoData
+		return "", apperror.ErrNoData
 	}
-	return nil, nil
+	if data.ProfilePicture != nil {
+		return data.ProfilePicture.SysFileName, nil
+	} else {
+		return "", nil
+	}
 }
 
 // internal helpers

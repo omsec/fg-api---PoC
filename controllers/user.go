@@ -419,9 +419,13 @@ func UploadProfilePicture(c *gin.Context) {
 		return
 	}
 
-	// delete target file if already present
-	// ToDO: read old file name from model
-	// os.Remove()
+	// delete old file if already present
+	old, err := environment.Env.UserModel.GetProfileFileName(uploadInfo.UploadedID)
+	fmt.Println(old)
+	if old != "" && err == nil {
+		old = "." + os.Getenv("UPLOAD_TARGET") + "/" + old
+		os.Remove(old)
+	}
 
 	// move file to destination
 	dst := "." + os.Getenv("UPLOAD_TARGET") + "/" + uploadInfo.SysFileName
@@ -434,7 +438,6 @@ func UploadProfilePicture(c *gin.Context) {
 		return
 	}
 
-	// ToDo: read TargetUser from form
 	err = environment.Env.UserModel.SetProfilePicture(uploadInfo)
 	if err != nil {
 		fmt.Println(err)
@@ -444,7 +447,5 @@ func UploadProfilePicture(c *gin.Context) {
 		return
 	}
 
-	// ToDO: Return file URL along with 200 (full path with domain)
-
-	c.String(http.StatusOK, fmt.Sprintf("'%s' uploaded!", file.Filename))
+	c.JSON(http.StatusCreated, Uploaded{uploadInfo.URL})
 }
