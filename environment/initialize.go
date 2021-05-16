@@ -11,6 +11,10 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+// upload serving endpoint's path is used
+// also by the respective handlers to build response url
+const UploadEndpoint = "/upload"
+
 // Environment is used for dependency-injection (package de-coupling)
 type Environment struct {
 	Requests     *client.Registry

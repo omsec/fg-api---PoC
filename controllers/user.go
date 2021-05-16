@@ -405,9 +405,12 @@ func UploadProfilePicture(c *gin.Context) {
 	// and don't use userID for file name
 	uploadInfo.SysFileName = "usr_" + uploadInfo.ID + filepath.Ext(file.Filename)
 	uploadInfo.OrigFileName = file.Filename
-	uploadInfo.URL = os.Getenv("APP_HOME") + os.Getenv("UPLOAD_TARGET") + "/" + uploadInfo.SysFileName
+	// ToDO: Helpers oder helpers.file proc für path funcs (ohne punkt)
+	// getStage, getTarget etc. die func arbeitet mit den envs
+	// save File, returns uploadInfo
+	uploadInfo.URL = os.Getenv("APP_HOME") + ":" + os.Getenv("APP_PORT") + environment.UploadEndpoint + uploadInfo.SysFileName
 
-	stage := "." + os.Getenv("UPLOAD_STAGE") + "/" + uploadInfo.SysFileName
+	stage := os.Getenv("UPLOAD_STAGE") + "/" + uploadInfo.SysFileName
 
 	// Upload the file to specific stage
 	err = c.SaveUploadedFile(file, stage)
@@ -419,16 +422,8 @@ func UploadProfilePicture(c *gin.Context) {
 		return
 	}
 
-	// delete old file if already present
-	old, err := environment.Env.UserModel.GetProfileFileName(uploadInfo.UploadedID)
-	fmt.Println(old)
-	if old != "" && err == nil {
-		old = "." + os.Getenv("UPLOAD_TARGET") + "/" + old
-		os.Remove(old)
-	}
-
 	// move file to destination
-	dst := "." + os.Getenv("UPLOAD_TARGET") + "/" + uploadInfo.SysFileName
+	dst := os.Getenv("UPLOAD_TARGET") + "/" + uploadInfo.SysFileName
 	err = os.Rename(stage, dst)
 	if err != nil {
 		fmt.Println(err)
@@ -438,6 +433,10 @@ func UploadProfilePicture(c *gin.Context) {
 		return
 	}
 
+	// get name of old file if present...
+	old, oldErr := environment.Env.UserModel.GetProfileFileName(uploadInfo.UploadedID)
+
+	// update meta data (registry)
 	err = environment.Env.UserModel.SetProfilePicture(uploadInfo)
 	if err != nil {
 		fmt.Println(err)
@@ -445,6 +444,12 @@ func UploadProfilePicture(c *gin.Context) {
 		apiError.Message = apiError.String(apiError.Code)
 		c.JSON(http.StatusInternalServerError, apiError)
 		return
+	}
+
+	// ...to delete it once the new file is in place
+	if old != "" && oldErr == nil {
+		old = os.Getenv("UPLOAD_TARGET") + "/" + old
+		os.Remove(old)
 	}
 
 	c.JSON(http.StatusCreated, Uploaded{uploadInfo.URL})

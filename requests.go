@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"forza-garage/authentication"
 	"forza-garage/controllers"
+	"forza-garage/environment"
 	"forza-garage/middleware"
 	"os"
 )
@@ -17,6 +18,7 @@ func handleRequests() {
 	// ToDo: Groups ?
 
 	router.GET("/test", controllers.Test)
+	router.Static(environment.UploadEndpoint, os.Getenv("UPLOAD_TARGET"))
 
 	router.GET("/lookups", controllers.ListLookups)
 

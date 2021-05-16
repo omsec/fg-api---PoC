@@ -9,7 +9,7 @@ import (
 )
 
 // Upload is the generic file uploader for profiles
-func Upload(c *gin.Context) {
+func UploadFile(c *gin.Context) {
 
 	// userID
 	_, err := authentication.Authenticate(c.Request)
