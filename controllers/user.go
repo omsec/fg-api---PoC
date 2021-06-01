@@ -104,6 +104,11 @@ func GetUser(c *gin.Context) {
 	// don't send password hash
 	user.Password = ""
 
+	// build URL to profile picture
+	// ToDo: via Helper in Model ?
+
+	//		user.ProfilePictureURL = os.Getenv("API_HOME") + ":" + os.Getenv("API_PORT") + environment.UploadEndpoint + "/" + user.ProfilePictureData.SysFileName
+
 	c.JSON(http.StatusOK, &user)
 
 	// log this request, if it was a new one
@@ -396,11 +401,14 @@ func UploadProfilePicture(c *gin.Context) {
 
 	// https://www.devdungeon.com/content/working-files-go
 
+	// ToDO: In Upload Model verschieben
 	// generate file name & prepare metadata
 	uploadInfo = new(models.UploadInfo)
 
-	uploadInfo.ID = uuid.NewV4().String()
-	uploadInfo.UploadedID = helpers.ObjectID(userID)
+	uploadInfo.ProfileID = helpers.ObjectID(userID)
+	uploadInfo.ProfileType = "user"
+	uploadInfo.ID = uuid.NewV4().String() // zufälliger dateiname (geht in stage fs/db)
+	uploadInfo.UploadedID = uploadInfo.ProfileID
 	// do not save path in the DB as this is subject to change
 	// and don't use userID for file name
 	uploadInfo.SysFileName = "usr_" + uploadInfo.ID + filepath.Ext(file.Filename)
@@ -433,9 +441,6 @@ func UploadProfilePicture(c *gin.Context) {
 		return
 	}
 
-	// get name of old file if present...
-	old, oldErr := environment.Env.UserModel.GetProfileFileName(uploadInfo.UploadedID)
-
 	// update meta data (registry)
 	err = environment.Env.UserModel.SetProfilePicture(uploadInfo)
 	if err != nil {
@@ -444,12 +449,6 @@ func UploadProfilePicture(c *gin.Context) {
 		apiError.Message = apiError.String(apiError.Code)
 		c.JSON(http.StatusInternalServerError, apiError)
 		return
-	}
-
-	// ...to delete it once the new file is in place
-	if old != "" && oldErr == nil {
-		old = os.Getenv("UPLOAD_TARGET") + "/" + old
-		os.Remove(old)
 	}
 
 	c.JSON(http.StatusCreated, Uploaded{uploadInfo.URL})

@@ -19,23 +19,25 @@ import (
 // ToDO: Sollte auch einen Header bekommen (z. B. für visits aus Repl, ModifiedTS)
 // User is the "interface" used for client communication
 type User struct {
-	ID             primitive.ObjectID `json:"id" bson:"_id"`
-	LoginName      string             `json:"loginName" bson:"loginName"` // unique
-	Password       string             `json:"password" bson:"password"`   // hash value
-	RoleCode       int32              `json:"roleCode" bson:"roleCD"`
-	RoleText       string             `json:"roleText" bson:"-"`
-	LanguageCode   int32              `json:"languageCode" bson:"languageCD" header:"Language"`
-	LanguageText   string             `json:"languageText" bson:"-"`
-	EMailAddress   string             `json:"eMail" bson:"eMail"`     // unique
-	XBoxTag        string             `json:"XBoxTag" bson:"XBoxTag"` // unique
-	PrivacyCode    int32              `json:"privacyCode" bson:"privacyCD"`
-	PrivacyText    string             `json:"privacyText" bson:"-"` // what to show to others in profile (usr-name vs xbox-tag)
-	Joined         time.Time          `json:"joinedTS" bson:"-"`
-	LastSeenTS     []time.Time        `json:"lastSeen" bson:"lastSeen,omitempty"` // limited to 5 in DB-Query (setLastSeen)
-	Friends        []UserRef          `json:"friends" bson:"-"`                   // loaded from diff. collection, at request
-	Following      []UserRef          `json:"following" bson:"-"`                 // loaded from diff. collection, at request
-	Followers      []UserRef          `json:"followers" bson:"-"`                 // loaded from diff. collection, at request
-	ProfilePicture *UploadInfo        `json:"profilePicture" bson:"profilePicture,omitempty"`
+	ID                   primitive.ObjectID `json:"id" bson:"_id"`
+	LoginName            string             `json:"loginName" bson:"loginName"` // unique
+	Password             string             `json:"password" bson:"password"`   // hash value
+	RoleCode             int32              `json:"roleCode" bson:"roleCD"`
+	RoleText             string             `json:"roleText" bson:"-"`
+	LanguageCode         int32              `json:"languageCode" bson:"languageCD" header:"Language"`
+	LanguageText         string             `json:"languageText" bson:"-"`
+	EMailAddress         string             `json:"eMail" bson:"eMail"`     // unique
+	XBoxTag              string             `json:"XBoxTag" bson:"XBoxTag"` // unique
+	PrivacyCode          int32              `json:"privacyCode" bson:"privacyCD"`
+	PrivacyText          string             `json:"privacyText" bson:"-"` // what to show to others in profile (usr-name vs xbox-tag)
+	Joined               time.Time          `json:"joinedTS" bson:"-"`
+	LastSeenTS           []time.Time        `json:"lastSeen" bson:"lastSeen,omitempty"` // limited to 5 in DB-Query (setLastSeen)
+	Friends              []UserRef          `json:"friends" bson:"-"`                   // loaded from diff. collection, at request
+	Following            []UserRef          `json:"following" bson:"-"`                 // loaded from diff. collection, at request
+	Followers            []UserRef          `json:"followers" bson:"-"`                 // loaded from diff. collection, at request
+	StagedProfilePicture *UploadInfo        `json:"-" bson:"stagedPP,omitempty"`        // API-internal data
+	ActiveProfilePicture *UploadInfo        `json:"-" bson:"activePP,omitempty"`        // API-internal data
+	ProfilePicture       *UploadData        `json:"profilePicture,omitempty"`           // set by func
 	// ToDo: []LastPasswords - check for 90 days or 10 entries
 }
 
@@ -828,28 +830,35 @@ func (m UserModel) eMailExists(emailAddress string) (bool, error) {
 // TODO: Create RemoveProfilePricture (which could be called by admins also)
 func (m UserModel) SetProfilePicture(uploadInfo *UploadInfo) error {
 
-	filter := bson.D{{Key: "_id", Value: uploadInfo.UploadedID}}
+	// if moderation is enabled:
+	// a new profile picture always goes to the [StagedProfilePicture] field,
+	// replacing another one that may be not yet moderated.
+	// the [ActiveProfilePicture] remains unchanged as this is updated by the
+	// moderation function
 
-	// fmt.Println(uploadInfo)
+	filter := bson.D{{Key: "_id", Value: uploadInfo.UploadedID}}
 
 	// prepare data
 	now := time.Now()
 	uploadInfo.UploadedTS = now
 	uploadInfo.UploadedName, _ = m.GetUserNameOID(uploadInfo.UploadedID)
-	// moderation maybe enabled/disabled for uploads and comments
-	// status model is shared
-	// (in a future refactoring "user content status" look-up type)
-	if os.Getenv("UPLOAD_MODERATION") == "YES" {
-		uploadInfo.StatusCode = lookups.CommentStatusPending
-	} else {
-		uploadInfo.StatusCode = lookups.CommentStatusVisible
-	}
 	uploadInfo.StatusTS = now
 	uploadInfo.StatusID = uploadInfo.UploadedID
 	uploadInfo.StatusName = uploadInfo.UploadedName
 
-	fields := bson.D{
-		{Key: "$set", Value: bson.D{{Key: "profilePicture", Value: &uploadInfo}}},
+	// fields := bson.D{} // wirft linter warning wegen unused
+	var fields bson.D
+
+	if os.Getenv("UPLOAD_MODERATION") == "YES" {
+		uploadInfo.StatusCode = lookups.CommentStatusPending
+		fields = bson.D{
+			{Key: "$set", Value: bson.D{{Key: "stagedPP", Value: &uploadInfo}}},
+		}
+	} else {
+		uploadInfo.StatusCode = lookups.CommentStatusVisible
+		fields = bson.D{
+			{Key: "$set", Value: bson.D{{Key: "activePP", Value: &uploadInfo}}},
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -876,31 +885,35 @@ func (m UserModel) ClearProfilePicture(userID string) error {
 	return nil
 }
 
-// GetProfileFileName returns the current avatat's file name if present
+// GetProfileFileName returns the current avatar's file name if present
 // (usually used to delete the file)
 func (m UserModel) GetProfileFileName(userID primitive.ObjectID) (string, error) {
 
-	filter := bson.D{{Key: "_id", Value: userID}}
+	// ToDO: Anpassen
+	/*
+		filter := bson.D{{Key: "_id", Value: userID}}
 
-	fields := bson.D{
-		{Key: "_id", Value: 0},
-		{Key: "profilePicture", Value: 1},
-	}
+		fields := bson.D{
+			{Key: "_id", Value: 0},
+			{Key: "profilePicture", Value: 1},
+		}
 
-	var data User
+		var data User
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel() // nach 10 Sekunden abbrechen
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel() // nach 10 Sekunden abbrechen
 
-	err := m.Collection.FindOne(ctx, filter, options.FindOne().SetProjection(fields)).Decode(&data)
-	if err != nil {
-		return "", apperror.ErrNoData
-	}
-	if data.ProfilePicture != nil {
-		return data.ProfilePicture.SysFileName, nil
-	} else {
-		return "", nil
-	}
+		err := m.Collection.FindOne(ctx, filter, options.FindOne().SetProjection(fields)).Decode(&data)
+		if err != nil {
+			return "", apperror.ErrNoData
+		}
+		if data.ProfilePictureInfo != nil {
+			return data.ProfilePictureInfo.SysFileName, nil
+		} else {
+			return "", nil
+		}
+	*/
+	return "", nil
 }
 
 // internal helpers
