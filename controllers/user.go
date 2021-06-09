@@ -41,7 +41,7 @@ func Test(c *gin.Context) {
 	*/
 
 	// fehlender parameter muss nicht geprüft werden, sonst wär's eine andere route
-	user, err := environment.Env.UserModel.GetUserByID("5feb2473b4d37f7f0285847a")
+	user, err := environment.Env.UserModel.GetUserByID("5feb2473b4d37f7f0285847a", "5feb2473b4d37f7f0285847a")
 	if err != nil {
 		apiError.Code = InvalidRequest
 		apiError.Message = apiError.String(apiError.Code)
@@ -78,7 +78,7 @@ func GetUser(c *gin.Context) {
 	}
 
 	// fehlender parameter muss nicht geprüft werden, sonst wär's eine andere route
-	user, err := environment.Env.UserModel.GetUserByID(c.Param("id"))
+	user, err := environment.Env.UserModel.GetUserByID(userID, c.Param("id"))
 	if err != nil {
 		// nothing found (not an error to the client)
 		if err == apperror.ErrNoData {
@@ -92,6 +92,7 @@ func GetUser(c *gin.Context) {
 	}
 
 	// apply privacy rules to visitors
+	// ToDo: im model machen (effective/executive id)
 	if userID != c.Param("id") {
 		switch user.PrivacyCode {
 		case lookups.PrivacyUserName:
@@ -104,10 +105,10 @@ func GetUser(c *gin.Context) {
 	// don't send password hash
 	user.Password = ""
 
-	// build URL to profile picture
-	// ToDo: via Helper in Model ?
-
-	//		user.ProfilePictureURL = os.Getenv("API_HOME") + ":" + os.Getenv("API_PORT") + environment.UploadEndpoint + "/" + user.ProfilePictureData.SysFileName
+	// add patch to build URL of profile picture
+	if user.ProfilePicture != nil {
+		user.ProfilePicture.URL = os.Getenv("API_HOME") + ":" + os.Getenv("API_PORT") + environment.UploadEndpoint + "/" + user.ProfilePicture.URL
+	}
 
 	c.JSON(http.StatusOK, &user)
 
@@ -372,9 +373,8 @@ func FollowUser(c *gin.Context) {
 func UploadProfilePicture(c *gin.Context) {
 
 	var (
-		err error
-		// data     models.UploadInfo
-		apiError   ErrorResponse // declared here to raise own errors
+		err        error
+		apiError   ErrorResponse
 		uploadInfo *models.UploadInfo
 	)
 
@@ -385,9 +385,16 @@ func UploadProfilePicture(c *gin.Context) {
 		return
 	}
 
-	// TODO: (in generic upload): Read Form Data - kein Body vorhanden!
-
-	// https://github.com/gin-gonic/gin#single-file
+	// effective user
+	// (no post body available at forms)
+	profileID := c.PostForm("profileId")
+	profileType := c.PostForm("profileType")
+	if profileID == "" || profileType == "" {
+		apiError.Code = InvalidJSON
+		apiError.Message = apiError.String(apiError.Code)
+		c.JSON(http.StatusUnprocessableEntity, apiError)
+		return
+	}
 
 	// single file
 	file, err := c.FormFile("file")
@@ -399,24 +406,14 @@ func UploadProfilePicture(c *gin.Context) {
 		return
 	}
 
-	// https://www.devdungeon.com/content/working-files-go
-
-	// ToDO: In Upload Model verschieben
-	// generate file name & prepare metadata
+	// generate file name & initialize metadata
 	uploadInfo = new(models.UploadInfo)
-
-	uploadInfo.ProfileID = helpers.ObjectID(userID)
-	uploadInfo.ProfileType = "user"
-	uploadInfo.ID = uuid.NewV4().String() // zufälliger dateiname (geht in stage fs/db)
-	uploadInfo.UploadedID = uploadInfo.ProfileID
-	// do not save path in the DB as this is subject to change
-	// and don't use userID for file name
-	uploadInfo.SysFileName = "usr_" + uploadInfo.ID + filepath.Ext(file.Filename)
+	uploadInfo.UploadedID = helpers.ObjectID(userID) // executive user from token
+	uploadInfo.SysFileName = "usr_" + uuid.NewV4().String() + filepath.Ext(file.Filename)
 	uploadInfo.OrigFileName = file.Filename
-	// ToDO: Helpers oder helpers.file proc für path funcs (ohne punkt)
-	// getStage, getTarget etc. die func arbeitet mit den envs
-	// save File, returns uploadInfo
 	uploadInfo.URL = os.Getenv("API_HOME") + ":" + os.Getenv("API_PORT") + environment.UploadEndpoint + "/" + uploadInfo.SysFileName
+
+	// https://www.devdungeon.com/content/working-files-go
 
 	stage := os.Getenv("UPLOAD_STAGE") + "/" + uploadInfo.SysFileName
 
@@ -442,7 +439,7 @@ func UploadProfilePicture(c *gin.Context) {
 	}
 
 	// update meta data (registry)
-	err = environment.Env.UserModel.SetProfilePicture(uploadInfo)
+	err = environment.Env.UploadModel.SaveMetaData(profileID, "user", uploadInfo)
 	if err != nil {
 		fmt.Println(err)
 		apiError.Code = SystemError
@@ -451,5 +448,10 @@ func UploadProfilePicture(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, Uploaded{uploadInfo.URL})
+	c.JSON(http.StatusCreated, Uploaded{
+		uploadInfo.URL,
+		uploadInfo.StatusCode,
+		uploadInfo.StatusText,
+	})
+
 }

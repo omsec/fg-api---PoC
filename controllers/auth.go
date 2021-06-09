@@ -267,7 +267,7 @@ func Refresh(c *gin.Context) {
 
 	// Die /refresh Route könnte auch eine leere Antwort zurückgeben. Vielleicht ist die erneute/aktualisierte
 	// Lieferung von <User> mal sinnvoll, bspw. für aktualisierte Sicherheitsinformationen oder einen Zähler etc.
-	dbUser, err := environment.Env.UserModel.GetUserByID(userID)
+	dbUser, err := environment.Env.UserModel.GetUserByID(userID, userID)
 	if err != nil {
 		// user does not exist - erneute Prüfung eigentlich kaum nötig, kann aber noch mehr Sicherheit geben :-)
 		if err == models.ErrInvalidUser {
@@ -303,6 +303,11 @@ func Refresh(c *gin.Context) {
 
 	// passwort nicht erneut zurücksenden
 	dbUser.Password = ""
+
+	// add patch to build URL of profile picture
+	if dbUser.ProfilePicture != nil {
+		dbUser.ProfilePicture.URL = os.Getenv("API_HOME") + ":" + os.Getenv("API_PORT") + environment.UploadEndpoint + "/" + dbUser.ProfilePicture.URL
+	}
 
 	c.JSON(http.StatusOK, &dbUser)
 }
@@ -348,7 +353,7 @@ func VerifyPassword(c *gin.Context) {
 	}{false}
 
 	// Benutzer in der DB suchen und das Profil laden (via ID aus Token)
-	dbUser, err = environment.Env.UserModel.GetUserByID(userID)
+	dbUser, err = environment.Env.UserModel.GetUserByID(userID, userID)
 	if err != nil {
 		// user does not exist (return false)
 		if err == models.ErrInvalidUser {
@@ -412,7 +417,7 @@ func ChangePassword(c *gin.Context) {
 	}
 
 	// re-load user's profile to perform additional security checks
-	dbUser, err = environment.Env.UserModel.GetUserByID(userID)
+	dbUser, err = environment.Env.UserModel.GetUserByID(userID, userID)
 	if err != nil {
 		// user does not exist
 		if err == models.ErrInvalidUser {

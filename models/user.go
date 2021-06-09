@@ -6,7 +6,6 @@ import (
 	"forza-garage/database"
 	"forza-garage/helpers"
 	"forza-garage/lookups"
-	"os"
 	"sort"
 	"time"
 
@@ -19,25 +18,24 @@ import (
 // ToDO: Sollte auch einen Header bekommen (z. B. für visits aus Repl, ModifiedTS)
 // User is the "interface" used for client communication
 type User struct {
-	ID                   primitive.ObjectID `json:"id" bson:"_id"`
-	LoginName            string             `json:"loginName" bson:"loginName"` // unique
-	Password             string             `json:"password" bson:"password"`   // hash value
-	RoleCode             int32              `json:"roleCode" bson:"roleCD"`
-	RoleText             string             `json:"roleText" bson:"-"`
-	LanguageCode         int32              `json:"languageCode" bson:"languageCD" header:"Language"`
-	LanguageText         string             `json:"languageText" bson:"-"`
-	EMailAddress         string             `json:"eMail" bson:"eMail"`     // unique
-	XBoxTag              string             `json:"XBoxTag" bson:"XBoxTag"` // unique
-	PrivacyCode          int32              `json:"privacyCode" bson:"privacyCD"`
-	PrivacyText          string             `json:"privacyText" bson:"-"` // what to show to others in profile (usr-name vs xbox-tag)
-	Joined               time.Time          `json:"joinedTS" bson:"-"`
-	LastSeenTS           []time.Time        `json:"lastSeen" bson:"lastSeen,omitempty"` // limited to 5 in DB-Query (setLastSeen)
-	Friends              []UserRef          `json:"friends" bson:"-"`                   // loaded from diff. collection, at request
-	Following            []UserRef          `json:"following" bson:"-"`                 // loaded from diff. collection, at request
-	Followers            []UserRef          `json:"followers" bson:"-"`                 // loaded from diff. collection, at request
-	StagedProfilePicture *UploadInfo        `json:"-" bson:"stagedPP,omitempty"`        // API-internal data
-	ActiveProfilePicture *UploadInfo        `json:"-" bson:"activePP,omitempty"`        // API-internal data
-	ProfilePicture       *UploadData        `json:"profilePicture,omitempty"`           // set by func
+	ID             primitive.ObjectID `json:"id" bson:"_id"`
+	LoginName      string             `json:"loginName" bson:"loginName"` // unique
+	Password       string             `json:"password" bson:"password"`   // hash value
+	RoleCode       int32              `json:"roleCode" bson:"roleCD"`
+	RoleText       string             `json:"roleText" bson:"-"`
+	LanguageCode   int32              `json:"languageCode" bson:"languageCD" header:"Language"`
+	LanguageText   string             `json:"languageText" bson:"-"`
+	EMailAddress   string             `json:"eMail" bson:"eMail"`     // unique
+	XBoxTag        string             `json:"XBoxTag" bson:"XBoxTag"` // unique
+	PrivacyCode    int32              `json:"privacyCode" bson:"privacyCD"`
+	PrivacyText    string             `json:"privacyText" bson:"-"` // what to show to others in profile (usr-name vs xbox-tag)
+	Joined         time.Time          `json:"joinedTS" bson:"-"`
+	LastSeenTS     []time.Time        `json:"lastSeen" bson:"lastSeen,omitempty"` // limited to 5 in DB-Query (setLastSeen)
+	Friends        []UserRef          `json:"friends" bson:"-"`                   // loaded from diff. collection, at request
+	Following      []UserRef          `json:"following" bson:"-"`                 // loaded from diff. collection, at request
+	Followers      []UserRef          `json:"followers" bson:"-"`                 // loaded from diff. collection, at request
+	ProfilePicture *FileInfo          `json:"profilePicture,omitempty" bson:"-"`  // set by func
+
 	// ToDo: []LastPasswords - check for 90 days or 10 entries
 }
 
@@ -67,8 +65,9 @@ type UserRef struct {
 type UserModel struct {
 	Client *mongo.Client
 	// could be a map - overkill ;-)
-	Collection *mongo.Collection
-	Social     *mongo.Collection
+	Collection        *mongo.Collection
+	Social            *mongo.Collection
+	GetProfilePicture func(profileOID primitive.ObjectID, userID string) ([]FileInfo, error) // injected from upload model
 }
 
 // UserExists checks if a User Name is available - used in client for in-type error checking
@@ -158,12 +157,12 @@ func (m UserModel) GetUserByName(userName string) (*User, error) {
 }
 
 // GetUserByID reads a user's login account data
-func (m UserModel) GetUserByID(ID string) (*User, error) {
+func (m UserModel) GetUserByID(executiveUserID string, effectiveUserID string) (*User, error) {
 
 	var user User
 
 	// https://ildar.pro/golang-hints-create-mongodb-object-id-from-string/
-	id, err := primitive.ObjectIDFromHex(ID)
+	id, err := primitive.ObjectIDFromHex(effectiveUserID)
 	if err != nil {
 		return nil, apperror.ErrNoData // eigentlich ErrInvalidUser da keine gültige OID, jedoch std-meldung ausgeben
 	}
@@ -181,6 +180,20 @@ func (m UserModel) GetUserByID(ID string) (*User, error) {
 	}
 	// extract creation timestamp from OID
 	user.Joined = primitive.ObjectID(id).Timestamp()
+
+	// set profile picture URL
+	// ToDo: Effective & Executive User!!!
+	pp, _ := m.GetProfilePicture(id, executiveUserID)
+	// any error is treated as "no/default" picture
+	if pp != nil {
+		// profile pictures are always stored at first position
+		// which is the only element here
+		user.ProfilePicture = new(FileInfo)
+		user.ProfilePicture.Description = pp[0].Description
+		user.ProfilePicture.StatusCode = pp[0].StatusCode
+		user.ProfilePicture.StatusText = pp[0].StatusText
+		user.ProfilePicture.URL = pp[0].URL // filename only - URL is built by controller
+	}
 
 	// add look-up text
 	//user.RoleText = database.GetLookupText(lookups.LookupType(lookups.LTuserRole), user.RoleCode)
@@ -824,96 +837,6 @@ func (m UserModel) eMailExists(emailAddress string) (bool, error) {
 	}
 	// no error means a document was found, hence the user does exist
 	return true, nil
-}
-
-// SetProfilePictures save the avatar's file meta data
-// TODO: Create RemoveProfilePricture (which could be called by admins also)
-func (m UserModel) SetProfilePicture(uploadInfo *UploadInfo) error {
-
-	// if moderation is enabled:
-	// a new profile picture always goes to the [StagedProfilePicture] field,
-	// replacing another one that may be not yet moderated.
-	// the [ActiveProfilePicture] remains unchanged as this is updated by the
-	// moderation function
-
-	filter := bson.D{{Key: "_id", Value: uploadInfo.UploadedID}}
-
-	// prepare data
-	now := time.Now()
-	uploadInfo.UploadedTS = now
-	uploadInfo.UploadedName, _ = m.GetUserNameOID(uploadInfo.UploadedID)
-	uploadInfo.StatusTS = now
-	uploadInfo.StatusID = uploadInfo.UploadedID
-	uploadInfo.StatusName = uploadInfo.UploadedName
-
-	// fields := bson.D{} // wirft linter warning wegen unused
-	var fields bson.D
-
-	if os.Getenv("UPLOAD_MODERATION") == "YES" {
-		uploadInfo.StatusCode = lookups.CommentStatusPending
-		fields = bson.D{
-			{Key: "$set", Value: bson.D{{Key: "stagedPP", Value: &uploadInfo}}},
-		}
-	} else {
-		uploadInfo.StatusCode = lookups.CommentStatusVisible
-		fields = bson.D{
-			{Key: "$set", Value: bson.D{{Key: "activePP", Value: &uploadInfo}}},
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel() // nach 10 Sekunden abbrechen
-
-	result, err := m.Collection.UpdateOne(ctx, filter, fields)
-	if err != nil {
-		return helpers.WrapError(err, helpers.FuncName())
-	}
-
-	if result.MatchedCount == 0 {
-		return apperror.ErrNoData // document might have been deleted
-	}
-
-	// ToDO: überlegen - rückgsabewerte sinnvoll? (z. B. timestamp? oder die ID analog add?)
-	return nil
-}
-
-// ClearProfilePicture removes the avatar
-func (m UserModel) ClearProfilePicture(userID string) error {
-
-	// https://docs.mongodb.com/manual/reference/operator/update/unset/
-	// also del file
-	return nil
-}
-
-// GetProfileFileName returns the current avatar's file name if present
-// (usually used to delete the file)
-func (m UserModel) GetProfileFileName(userID primitive.ObjectID) (string, error) {
-
-	// ToDO: Anpassen
-	/*
-		filter := bson.D{{Key: "_id", Value: userID}}
-
-		fields := bson.D{
-			{Key: "_id", Value: 0},
-			{Key: "profilePicture", Value: 1},
-		}
-
-		var data User
-
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel() // nach 10 Sekunden abbrechen
-
-		err := m.Collection.FindOne(ctx, filter, options.FindOne().SetProjection(fields)).Decode(&data)
-		if err != nil {
-			return "", apperror.ErrNoData
-		}
-		if data.ProfilePictureInfo != nil {
-			return data.ProfilePictureInfo.SysFileName, nil
-		} else {
-			return "", nil
-		}
-	*/
-	return "", nil
 }
 
 // internal helpers

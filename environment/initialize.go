@@ -22,6 +22,7 @@ type Environment struct {
 	UserModel    models.UserModel
 	VoteModel    models.VoteModel
 	CommentModel models.CommentModel
+	UploadModel  models.UploadModel
 	CourseModel  models.CourseModel
 }
 
@@ -57,9 +58,18 @@ func newEnv(mongoClient *mongo.Client, influxClient *influxdb2.Client) *Environm
 	// no deletes required for search bucket (TTL set)
 	env.Tracker.Requests = env.Requests
 
+	// upload muss vor user initialisiert werden
+	env.UploadModel.Collection = mongoClient.Database(os.Getenv("DB_NAME")).Collection("uploads")
+	env.UploadModel.GetUserNameOID = env.UserModel.GetUserNameOID
+	env.UploadModel.GetCredentials = env.UserModel.GetCredentials
+
 	env.UserModel.Client = mongoClient
 	env.UserModel.Collection = mongoClient.Database(os.Getenv("DB_NAME")).Collection("users") // ToDO: Const
 	env.UserModel.Social = mongoClient.Database(os.Getenv("DB_NAME")).Collection("social")    // ToDO: Const
+	env.UserModel.GetProfilePicture = env.UploadModel.GetMetaData
+
+	env.UploadModel.GetUserNameOID = env.UserModel.GetUserNameOID
+	env.UploadModel.GetCredentials = env.UserModel.GetCredentials
 
 	// inject user model function to analytics tracker after its initialization
 	env.Tracker.GetUserName = env.UserModel.GetUserName

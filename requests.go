@@ -68,6 +68,9 @@ func handleRequests() {
 	// commenting
 	router.POST("/comment", authentication.TokenAuthMiddleware(), controllers.AddComment) // easier handling for client
 
+	// uploading
+	router.POST("/upload", authentication.TokenAuthMiddleware(), controllers.UploadFile)
+
 	// course
 	// GET hat keinen BODY (Go/Gin & Postman unterstützen das zwar, Angular nicht) - deshalb Parameter
 	// https://xspdf.com/resolution/58530870.html

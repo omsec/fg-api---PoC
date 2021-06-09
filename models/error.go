@@ -29,3 +29,8 @@ var (
 var (
 	ErrCommentEmpty = errors.New("comment is required")
 )
+
+// uploads
+var (
+	ErrMaximumFilesReached = errors.New("file limit exceeded")
+)
