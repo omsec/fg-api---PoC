@@ -2,6 +2,7 @@ package environment
 
 import (
 	"forza-garage/analytics"
+	"forza-garage/authorization"
 	"forza-garage/client"
 	"forza-garage/database"
 	"forza-garage/models"
@@ -19,6 +20,7 @@ const UploadEndpoint = "/upload"
 type Environment struct {
 	Requests     *client.Registry
 	Tracker      *analytics.Tracker
+	Credentials  *authorization.Credentials
 	UserModel    models.UserModel
 	VoteModel    models.VoteModel
 	CommentModel models.CommentModel
@@ -36,6 +38,7 @@ func newEnv(mongoClient *mongo.Client, influxClient *influxdb2.Client) *Environm
 	mongoCollections := make(map[string]*mongo.Collection)
 	mongoCollections["users"] = mongoClient.Database(os.Getenv("DB_NAME")).Collection("users") // ToDO: const
 	mongoCollections["racing"] = mongoClient.Database(os.Getenv("DB_NAME")).Collection("racing")
+	mongoCollections["social"] = mongoClient.Database(os.Getenv("DB_NAME")).Collection("social")
 
 	// keep track of clients and their last requests
 	env.Requests = new(client.Registry)
@@ -58,18 +61,20 @@ func newEnv(mongoClient *mongo.Client, influxClient *influxdb2.Client) *Environm
 	// no deletes required for search bucket (TTL set)
 	env.Tracker.Requests = env.Requests
 
+	env.Credentials = new(authorization.Credentials)
+	env.Credentials.SetConnections(mongoCollections)
+
 	// upload muss vor user initialisiert werden
 	env.UploadModel.Collection = mongoClient.Database(os.Getenv("DB_NAME")).Collection("uploads")
-	env.UploadModel.GetUserNameOID = env.UserModel.GetUserNameOID
-	env.UploadModel.GetCredentials = env.UserModel.GetCredentials
+	//env.UploadModel.GetUserNameOID = env.UserModel.GetUserNameOID
+	env.UploadModel.GetCredentials = env.Credentials.GetCredentials
 
 	env.UserModel.Client = mongoClient
 	env.UserModel.Collection = mongoClient.Database(os.Getenv("DB_NAME")).Collection("users") // ToDO: Const
 	env.UserModel.Social = mongoClient.Database(os.Getenv("DB_NAME")).Collection("social")    // ToDO: Const
 	env.UserModel.GetProfilePicture = env.UploadModel.GetMetaData
 
-	env.UploadModel.GetUserNameOID = env.UserModel.GetUserNameOID
-	env.UploadModel.GetCredentials = env.UserModel.GetCredentials
+	env.UploadModel.GetUserNameOID = env.UserModel.GetUserNameOID // ToDo: Evtl. auch in author - REIHENFOLGE heikel
 
 	// inject user model function to analytics tracker after its initialization
 	env.Tracker.GetUserName = env.UserModel.GetUserName
@@ -86,7 +91,7 @@ func newEnv(mongoClient *mongo.Client, influxClient *influxdb2.Client) *Environm
 	env.CourseModel.Collection = mongoClient.Database(os.Getenv("DB_NAME")).Collection("racing") // ToDO: Const
 	// Funktionen aus dem User Model in's Course model "injecten"
 	env.CourseModel.GetUserName = env.UserModel.GetUserName
-	env.CourseModel.CredentialsReader = env.UserModel.GetCredentials
+	env.CourseModel.CredentialsReader = env.UserModel.GetCredentials // ToDo: auf authorization umstellen
 	env.CourseModel.GetUserVote = env.VoteModel.GetUserVote
 	// inject analytics
 	// env.CourseModel.Tracker = env.Tracker

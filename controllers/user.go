@@ -427,9 +427,9 @@ func UploadProfilePicture(c *gin.Context) {
 		return
 	}
 
-	// move file to destination
-	dst := os.Getenv("UPLOAD_TARGET") + "/" + uploadInfo.SysFileName
-	err = os.Rename(stage, dst)
+	// update meta data (registry)
+	// (file left in stage if this step fails)
+	err = environment.Env.UploadModel.SaveMetaData(profileID, "user", uploadInfo)
 	if err != nil {
 		fmt.Println(err)
 		apiError.Code = SystemError
@@ -438,8 +438,9 @@ func UploadProfilePicture(c *gin.Context) {
 		return
 	}
 
-	// update meta data (registry)
-	err = environment.Env.UploadModel.SaveMetaData(profileID, "user", uploadInfo)
+	// move file to destination
+	dst := os.Getenv("UPLOAD_TARGET") + "/" + uploadInfo.SysFileName
+	err = os.Rename(stage, dst)
 	if err != nil {
 		fmt.Println(err)
 		apiError.Code = SystemError

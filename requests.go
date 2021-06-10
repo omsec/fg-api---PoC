@@ -86,6 +86,8 @@ func handleRequests() {
 	// commenting
 	router.GET("/courses/public/:id/comments", controllers.ListCommentsPublic)
 	router.GET("/courses/member/:id/comments", authentication.TokenAuthMiddleware(), controllers.ListCommentsMember)
+	// uploads
+	// ToDo: public & member wie comments
 
 	// logics
 	router.POST("/course/exists", authentication.TokenAuthMiddleware(), controllers.ExistsForzaShare) // protected to prevent sniffs ;-)

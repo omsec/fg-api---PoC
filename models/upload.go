@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"forza-garage/apperror"
+	"forza-garage/authorization"
 	"forza-garage/database"
 	"forza-garage/helpers"
 	"forza-garage/lookups"
@@ -77,7 +78,7 @@ type UploadModel struct {
 	// Gewisse Informationen kommen vom User-Model, die werden hier referenziert
 	// somit muss das nicht der Controller machen
 	GetUserNameOID func(userID primitive.ObjectID) (string, error)
-	GetCredentials func(userId string, loadFriendlist bool) *Credentials
+	GetCredentials func(userOID primitive.ObjectID, loadFriendlist bool) *authorization.Credentials
 	GetUserVote    func(profileID string, userID string) (int32, error) // injected from vote model
 }
 
@@ -134,7 +135,7 @@ func (m UploadModel) SaveMetaData(profileID string, profileType string, uploadIn
 			if os.Getenv("UPLOAD_MODERATION") == "YES" {
 				uploadInfo.StatusCode = lookups.CommentStatusPending
 				fields = bson.D{
-					{Key: "$set", Value: bson.D{{Key: "slots.0.active", Value: &uploadInfo}}},
+					{Key: "$set", Value: bson.D{{Key: "slots.0.staged", Value: &uploadInfo}}},
 				}
 			} else {
 				uploadInfo.StatusCode = lookups.CommentStatusVisible
@@ -296,20 +297,18 @@ func (m UploadModel) GetMetaData(profileOID primitive.ObjectID, executiveUserID 
 
 	// if moderation is enabled, return approved content only
 	if os.Getenv("UPLOAD_MODERATION") == "YES" {
-		// ToDo: check Admin Role - injection problem :-/
 		executiveUserOID := helpers.ObjectID(executiveUserID)
-		/*
-			cred := m.GetCredentials(executiveUserID, false)
-			fmt.Println(cred)
-			if cred != nil {
-				return nil, err
-			}
-		*/
+
+		cred := m.GetCredentials(executiveUserOID, false)
+		if cred == nil {
+			return nil, err
+		}
+
 		for _, s := range data.Slots {
 			// creators see their pending content
 			if s.Staged != nil {
-				//if (s.Staged.UploadedID == executiveUserOID) || (cred.RoleCode == lookups.UserRoleAdmin) {
-				if s.Staged.UploadedID == executiveUserOID {
+				if (s.Staged.UploadedID == executiveUserOID) || (cred.RoleCode == lookups.UserRoleAdmin) {
+					//if s.Staged.UploadedID == executiveUserOID {
 					fileInfo.Description = s.Staged.Description
 					fileInfo.StatusCode = s.Staged.StatusCode
 					fileInfo.StatusText = database.GetLookupText(lookups.LookupType(lookups.LTcommentStatus), s.Staged.StatusCode)
