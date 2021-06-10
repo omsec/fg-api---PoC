@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"fmt"
+	"forza-garage/apperror"
 	"forza-garage/authentication"
 	"forza-garage/environment"
 	"forza-garage/helpers"
@@ -97,5 +98,59 @@ func UploadFile(c *gin.Context) {
 		uploadInfo.StatusCode,
 		uploadInfo.StatusText,
 	})
+}
+
+// DownloadFilesPublic is the generic URL-provider for all profiles
+// if moderation is enabled, this endpoint only returns approved content
+func DownloadFilesPublic(c *gin.Context) {
+
+	profileOID := helpers.ObjectID(c.Param("id"))
+	fileInfos, err := environment.Env.UploadModel.GetMetaData(profileOID, "")
+	if err != nil {
+		// nothing found (not an error to the client)
+		if err == apperror.ErrNoData {
+			c.Status(http.StatusNoContent)
+			return
+		}
+		// technical errors
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
+		return
+	}
+
+	c.JSON(http.StatusOK, fileInfos)
+}
+
+// DownloadFilesMember is the generic URL-provider for all profiles
+// if moderation is enabled, this endpoint also returns pending content for admins and creators
+func DownloadFilesMember(c *gin.Context) {
+
+	userID, err := authentication.Authenticate(c.Request)
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	profileOID := helpers.ObjectID(c.Param("id"))
+	fileInfos, err := environment.Env.UploadModel.GetMetaData(profileOID, userID)
+	if err != nil {
+		// nothing found (not an error to the client)
+		if err == apperror.ErrNoData {
+			c.Status(http.StatusNoContent)
+			return
+		}
+		// technical errors
+		status, apiError := HandleError(err)
+		c.JSON(status, apiError)
+		return
+	}
+
+	// add patch to build URL of profile picture
+	// statt env künftig zentrales config obj - dann im Model
+	for i, v := range fileInfos {
+		fileInfos[i].URL = os.Getenv("API_HOME") + ":" + os.Getenv("API_PORT") + environment.UploadEndpoint + "/" + v.URL
+	}
+
+	c.JSON(http.StatusOK, fileInfos)
 
 }

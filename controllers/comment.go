@@ -59,6 +59,7 @@ func AddComment(c *gin.Context) {
 }
 
 // ListCommentsPubic returns all comments and their answers (limited)
+// (generic handlers for all profile types)
 func ListCommentsPublic(c *gin.Context) {
 
 	comments, err := environment.Env.CommentModel.ListComments(c.Param("id"), "")

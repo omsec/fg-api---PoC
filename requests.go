@@ -83,11 +83,12 @@ func handleRequests() {
 	// ToDO: Delete
 	// statistics
 	router.GET("/courses/public/:id/visits", controllers.GetCourseVisits) // visits since last 7 days "hot"
-	// commenting
+	// commenting - generic handlers for all profile types
 	router.GET("/courses/public/:id/comments", controllers.ListCommentsPublic)
 	router.GET("/courses/member/:id/comments", authentication.TokenAuthMiddleware(), controllers.ListCommentsMember)
-	// uploads
-	// ToDo: public & member wie comments
+	// uploads - generic handlers for all profile types (user profile is part of user domain)
+	router.GET("/courses/public/:id/uploads", controllers.DownloadFilesPublic)
+	router.GET("/courses/member/:id/uploads", authentication.TokenAuthMiddleware(), controllers.DownloadFilesMember)
 
 	// logics
 	router.POST("/course/exists", authentication.TokenAuthMiddleware(), controllers.ExistsForzaShare) // protected to prevent sniffs ;-)

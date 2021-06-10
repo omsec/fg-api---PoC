@@ -295,8 +295,8 @@ func (m UploadModel) GetMetaData(profileOID primitive.ObjectID, executiveUserID 
 	var fileInfo FileInfo
 	var fileInfos []FileInfo
 
-	// if moderation is enabled, return approved content only
-	if os.Getenv("UPLOAD_MODERATION") == "YES" {
+	// if moderation is enabled or anonymous visitor, return approved content only (else-branch)
+	if os.Getenv("UPLOAD_MODERATION") == "YES" && executiveUserID != "" {
 		executiveUserOID := helpers.ObjectID(executiveUserID)
 
 		cred := m.GetCredentials(executiveUserOID, false)
@@ -337,7 +337,11 @@ func (m UploadModel) GetMetaData(profileOID primitive.ObjectID, executiveUserID 
 		}
 	}
 
-	return fileInfos, nil
+	if fileInfos == nil {
+		return nil, apperror.ErrNoData
+	} else {
+		return fileInfos, nil
+	}
 }
 
 // ToDO: DeleteMetaData
