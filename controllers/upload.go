@@ -152,5 +152,23 @@ func DownloadFilesMember(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, fileInfos)
+}
 
+// DeleteFile removes metadata and the file
+// any errors will be ignored.
+// http://localhost:3000/courses/member/5feb25fa266749192452cc08/uploads/course_ca0df1ac-b0e1-4140-bb3c-099a4846b89f.png
+func DeleteFile(c *gin.Context) {
+
+	userID, err := authentication.Authenticate(c.Request)
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	profileOID := helpers.ObjectID(c.Param("id"))
+	userOID := helpers.ObjectID(userID)
+
+	_ = environment.Env.UploadModel.DeleteUpload(profileOID, c.Param("fid"), userOID)
+
+	// always return OK since any error is ignored
 }

@@ -1,5 +1,10 @@
 package client
 
+// don't confused this with the rate limiter!
+// it's used to control the "visitors" counter of profiles.
+// a simple map of IP-addresses of clients seen in a given period of time.
+// the map is shrinked periodically by a timed GO-routine.
+
 import (
 	"sync"
 	"time"

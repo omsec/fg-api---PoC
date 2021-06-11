@@ -82,6 +82,13 @@ type UploadModel struct {
 	GetUserVote    func(profileID string, userID string) (int32, error) // injected from vote model
 }
 
+// file locations are used internally to make functions independent of moderation status
+const (
+	flUndefined = iota
+	flStage
+	flActive
+)
+
 func (m UploadModel) SaveMetaData(profileID string, profileType string, uploadInfo *UploadInfo) error {
 
 	profileOID := helpers.ObjectID(profileID)
@@ -344,7 +351,112 @@ func (m UploadModel) GetMetaData(profileOID primitive.ObjectID, executiveUserID 
 	}
 }
 
-// ToDO: DeleteMetaData
+// DeleteUpload delete the metadata and the file
+// error might be ignored by handler & not sent to the client
+func (m UploadModel) DeleteUpload(profileID primitive.ObjectID, fileName string, executiveUserID primitive.ObjectID) error {
+
+	var err error
+	var data UploadHeader
+
+	// read the profile's upload metadata
+	filter := bson.D{{Key: "profileID", Value: profileID}}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel() // nach 10 Sekunden abbrechen
+
+	// by convention, there's none or one document per profile
+	err = m.Collection.FindOne(ctx, filter).Decode(&data)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return apperror.ErrNoData
+		}
+		// pass any other error
+		return helpers.WrapError(err, helpers.FuncName())
+	}
+
+	// use the (unique) file name as identifier
+	_, location, area := m.findFile(data.Slots, fileName)
+	if location == flUndefined {
+		return apperror.ErrNoData
+	}
+
+	cred := m.GetCredentials(area.UploadedID, false)
+	if cred == nil {
+		return apperror.ErrNoData
+	}
+
+	// must be admin or creator (uploader)
+	if !(area.UploadedID == executiveUserID || cred.RoleCode == lookups.UserRoleAdmin) {
+		return apperror.ErrDenied
+	}
+
+	// delete metadata
+	// removing (pulling) an item from an array is an update operation in MongoDB
+	// https://docs.mongodb.com/manual/reference/operator/update/pull/
+	fields := bson.D{}
+	switch location {
+	case flActive:
+		fields = bson.D{
+			{Key: "$pull", Value: bson.D{
+				{Key: "slots", Value: bson.D{
+					{Key: "active.fileName", Value: fileName},
+				}},
+			}},
+		}
+	case flStage:
+		fields = bson.D{
+			{Key: "$pull", Value: bson.D{
+				{Key: "slots", Value: bson.D{
+					{Key: "staged.fileName", Value: fileName},
+				}},
+			}},
+		}
+	}
+
+	result, err := m.Collection.UpdateOne(ctx, filter, fields)
+	if err != nil {
+		return helpers.WrapError(err, helpers.FuncName())
+	}
+
+	if result.MatchedCount == 0 {
+		return apperror.ErrNoData // document might have been deleted
+	}
+
+	// read document again to find out if there are no files associated with it anymore
+	err = m.Collection.FindOne(ctx, filter).Decode(&data)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return apperror.ErrNoData
+		}
+		// pass any other error
+		return helpers.WrapError(err, helpers.FuncName())
+	}
+
+	// delete the document if there are no files associoated with the profile anymore
+	if len(data.Slots) == 0 {
+		delRes, err := m.Collection.DeleteOne(ctx, filter)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				return apperror.ErrNoData
+			}
+			// pass any other error
+			return helpers.WrapError(err, helpers.FuncName())
+		}
+		if delRes.DeletedCount == 0 {
+			return apperror.ErrNoData // document might have been deleted already
+		}
+	}
+
+	// delete file
+	// files currently under review (db/slot file location "staged") still resides in the target directory on the file system
+	fullPath := os.Getenv("UPLOAD_TARGET") + "/" + fileName
+	err = os.Remove(fullPath)
+	if err != nil {
+		fmt.Println("err: ", err)
+	}
+	fmt.Println("file: ", fullPath)
+	return nil
+
+}
 
 // since the upsert operation can not be used here, this function checks if there's already a document
 // containing upload metadata for a profile
@@ -372,6 +484,24 @@ func (m UploadModel) uploadsExists(profileID primitive.ObjectID) (bool, error) {
 	}
 	// no error means a document was found, hence the user does exist
 	return true, nil
+}
+
+// find a file in a document's slots
+// returns position, -1 if not found
+func (m UploadModel) findFile(slots []Slot, value string) (int, int, *UploadInfo) {
+	for i, item := range slots {
+		if item.Staged != nil {
+			if item.Staged.SysFileName == value {
+				return i, flStage, item.Staged
+			}
+		}
+		if item.Active != nil {
+			if item.Active.SysFileName == value {
+				return i, flActive, item.Active
+			}
+		}
+	}
+	return -1, flUndefined, nil
 }
 
 // Generic Functions

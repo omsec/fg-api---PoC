@@ -54,6 +54,8 @@ func handleRequests() {
 
 	router.GET("/users/:id/followers", authentication.TokenAuthMiddleware(), controllers.GetFollowers)
 
+	router.DELETE("/users/:id/uploads/:fid", authentication.TokenAuthMiddleware(), controllers.DeleteFile)
+
 	// system tools
 	router.GET("/monitor/requests/count", authentication.TokenAuthMiddleware(), controllers.CountRequests)
 	router.GET("/monitor/requests/dump", authentication.TokenAuthMiddleware(), controllers.DumpRequests)
@@ -89,6 +91,7 @@ func handleRequests() {
 	// uploads - generic handlers for all profile types (user profile is part of user domain)
 	router.GET("/courses/public/:id/uploads", controllers.DownloadFilesPublic)
 	router.GET("/courses/member/:id/uploads", authentication.TokenAuthMiddleware(), controllers.DownloadFilesMember)
+	router.DELETE("/courses/member/:id/uploads/:fid", authentication.TokenAuthMiddleware(), controllers.DeleteFile)
 
 	// logics
 	router.POST("/course/exists", authentication.TokenAuthMiddleware(), controllers.ExistsForzaShare) // protected to prevent sniffs ;-)
@@ -99,7 +102,7 @@ func handleRequests() {
 	case "PRD":
 		router.RunTLS(":"+os.Getenv("API_PORT"), os.Getenv("APP_CERTFILE"), os.Getenv("APP_KEYFILE"))
 	default:
-		panic(fmt.Errorf("APP_ENV must not set"))
+		panic(fmt.Errorf("APP_ENV not set"))
 	}
 
 	// https://github.com/denji/golang-tls
