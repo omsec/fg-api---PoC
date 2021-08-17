@@ -458,6 +458,23 @@ func (m UploadModel) DeleteUpload(profileID primitive.ObjectID, fileName string,
 
 }
 
+// GetModerationSample is called my the Moderation Model if this feature is enabled
+func (m UploadModel) GetModerationSample() *ReviewItem {
+
+	// use aggregation framework
+	// 1. filter ($match)
+	// https://stackoverflow.com/questions/38576172/mongodb-sample-after-filtering
+	// 2. sample
+	// https://docs.mongodb.com/manual/reference/operator/aggregation/sample/
+
+	// db.uploads.find({"slots.staged.statusCD": {$in: [0, 1]}});
+	// https://docs.mongodb.com/manual/tutorial/query-array-of-documents/
+
+	// if mod==yes: 1. staged 2. active else active
+
+	return nil
+}
+
 // since the upsert operation can not be used here, this function checks if there's already a document
 // containing upload metadata for a profile
 func (m UploadModel) uploadsExists(profileID primitive.ObjectID) (bool, error) {

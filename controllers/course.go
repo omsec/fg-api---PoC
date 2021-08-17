@@ -55,6 +55,8 @@ func AddCourse(c *gin.Context) {
 
 // ListCoursesPublic returns a list of racing tracks
 // format => http://localhost:3000/courses/public?searchMode=2&game=0&series=0&series=2&search=test
+// im postman cert verification abstellen, da self-signed
+// https://192.168.1.10:3000/courses/public?searchMode=2&game=0&series=0&series=2&search=test
 func ListCoursesPublic(c *gin.Context) {
 
 	var apiError ErrorResponse
